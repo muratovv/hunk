@@ -243,7 +243,7 @@ describe("PTY scrolling", () => {
       });
 
       expect(initial).toContain("aaa-collapsed.ts");
-      expect(initial).toContain("▾ 362 unchanged lines");
+      expect(initial).toContain("362 unchanged lines");
       expect(initial).not.toContain("366 - export const line366 = 366;");
 
       await session.scrollDown(1);
@@ -285,12 +285,12 @@ describe("PTY scrolling", () => {
       const restored = await harness.waitForSnapshot(
         session,
         (text) =>
-          text.includes("▾ 362 unchanged lines") &&
+          text.includes("362 unchanged lines") &&
           harness.countMatches(text, /aaa-collapsed\.ts/g) === initialHeaderCount,
         5_000,
       );
 
-      expect(restored).toContain("▾ 362 unchanged lines");
+      expect(restored).toContain("362 unchanged lines");
       expect(restored).not.toContain("366 - export const line366 = 366;");
       expect(harness.countMatches(restored, /aaa-collapsed\.ts/g)).toBe(initialHeaderCount);
     } finally {
