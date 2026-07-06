@@ -75,6 +75,10 @@ const DEFAULT_VIEW_PREFERENCES: PersistedViewPreferences = {
   copyDecorations: false,
 };
 
+// Keep in sync with DEFAULT_EXPAND_STEP in src/ui/diff/gapExpansion.ts (the
+// controller-side fallback). Duplicated to keep core free of a ui/ import.
+const DEFAULT_EXPAND_STEP = 20;
+
 interface ConfigResolutionOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -109,6 +113,11 @@ function normalizeBoolean(value: unknown) {
 /** Accept only plain strings from config files. */
 function normalizeString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** Accept only a positive integer gap-expansion step; anything else falls back to the default. */
+function normalizeExpandStep(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : undefined;
 }
 
 /** Accept only #rrggbb theme colors and report the failing TOML key path. */
@@ -244,6 +253,7 @@ function readConfigPreferences(source: Record<string, unknown>): CommonOptions {
       normalizeBoolean(source.transparentBackground) ??
       normalizeBoolean(source.transparent_background),
     colorMoved: normalizeBoolean(source.color_moved),
+    expandStep: normalizeExpandStep(source.expand_step),
   };
 }
 
@@ -266,6 +276,7 @@ function mergeOptions(base: CommonOptions, overrides: CommonOptions): CommonOpti
     copyDecorations: overrides.copyDecorations ?? base.copyDecorations,
     transparentBackground: overrides.transparentBackground ?? base.transparentBackground,
     colorMoved: overrides.colorMoved ?? base.colorMoved,
+    expandStep: overrides.expandStep ?? base.expandStep,
   };
 }
 
@@ -333,6 +344,7 @@ export function resolveConfiguredCliInput(
     agentNotes: DEFAULT_VIEW_PREFERENCES.showAgentNotes,
     copyDecorations: DEFAULT_VIEW_PREFERENCES.copyDecorations,
     transparentBackground: false,
+    expandStep: DEFAULT_EXPAND_STEP,
   };
 
   if (userConfigPath) {
@@ -366,6 +378,7 @@ export function resolveConfiguredCliInput(
     copyDecorations: resolvedOptions.copyDecorations ?? DEFAULT_VIEW_PREFERENCES.copyDecorations,
     transparentBackground: resolvedOptions.transparentBackground ?? false,
     colorMoved: resolvedOptions.colorMoved,
+    expandStep: resolvedOptions.expandStep ?? DEFAULT_EXPAND_STEP,
   };
 
   if (resolvedOptions.theme === "custom" && !resolvedCustomTheme) {

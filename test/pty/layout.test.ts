@@ -123,7 +123,7 @@ describe("PTY layout", () => {
     }
   });
 
-  test("real PTY sessions can expand and collapse unchanged context", async () => {
+  test("z expands unchanged context up and the gap disappears once fully revealed", async () => {
     const fixture = harness.createExpandableContextFilePair();
     const session = await harness.launchHunk({
       args: ["diff", fixture.before, fixture.after, "--mode", "split"],
@@ -136,26 +136,52 @@ describe("PTY layout", () => {
         timeout: 15_000,
       });
 
-      expect(initial).toContain("▾ 1 unchanged line");
+      // Collapsed gap advertises directional affordances, not the old whole-gap chevron.
+      expect(initial).toContain("1 unchanged line");
+      expect(initial).not.toContain("▾");
       expect(initial).not.toContain("hiddenLine01");
 
+      // z reveals the leading gap from the top; the single hidden line becomes a
+      // context row and the (now fully revealed) separator disappears.
       await session.press("z");
       const expanded = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("Hide 1 unchanged line") && text.includes("hiddenLine01"),
+        (text) => text.includes("hiddenLine01") && !text.includes("1 unchanged line"),
         5_000,
       );
 
       expect(expanded).toContain("hiddenLine01");
+      expect(expanded).not.toContain("1 unchanged line");
+    } finally {
+      session.close();
+    }
+  });
 
-      await session.press("z");
-      const collapsed = await harness.waitForSnapshot(
+  test("Shift+z expands unchanged context down in a real PTY", async () => {
+    const fixture = harness.createExpandableContextFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 140,
+      rows: 16,
+    });
+
+    try {
+      const initial = await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, {
+        timeout: 15_000,
+      });
+      expect(initial).not.toContain("hiddenLine01");
+
+      // Shift+z grows the nearest gap from the bottom edge; for this one-line gap
+      // that reveals the same hidden line, proving the expand-down binding is wired.
+      // Send the raw uppercase byte so OpenTUI reports sequence "Z" (isUppercaseZKey).
+      session.writeRaw("Z");
+      const expanded = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("▾ 1 unchanged line") && !text.includes("hiddenLine01"),
+        (text) => text.includes("hiddenLine01"),
         5_000,
       );
 
-      expect(collapsed).not.toContain("hiddenLine01");
+      expect(expanded).toContain("hiddenLine01");
     } finally {
       session.close();
     }

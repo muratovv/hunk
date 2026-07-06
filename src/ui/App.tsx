@@ -184,6 +184,7 @@ export function App({
   const review = useReviewController({
     files: bootstrap.changeset.files,
     userNotesSidecarPath: bootstrap.userNotesSidecarPath,
+    expandStep: bootstrap.input.options.expandStep,
   });
   const filteredFiles = review.visibleFiles;
   const selectedFile = review.selectedFile;
@@ -852,7 +853,7 @@ export function App({
     themeSelectorOpen: themeSelectorState.open,
     toggleAgentNotes,
     toggleFocusArea,
-    toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
+    expandSelectedHunkGap: review.expandSelectedHunkGap,
     toggleHelp,
     toggleHunkHeaders,
     toggleLineNumbers,
@@ -1008,7 +1009,7 @@ export function App({
           codeHorizontalOffset={codeHorizontalOffset}
           copyDecorations={copyDecorations}
           diffContentWidth={diffContentWidth}
-          expandedGapsByFileId={review.expandedGapsByFileId}
+          gapExpansionsByFileId={review.gapExpansionsByFileId}
           files={filteredFiles}
           pagerMode={pagerMode}
           screenLeft={diffPaneScreenLeft}
@@ -1049,7 +1050,7 @@ export function App({
           }}
           onCopyFeedback={showTransientNotice}
           onSelectFile={jumpToFile}
-          onToggleGap={review.toggleGap}
+          onGapAction={review.applyGapAction}
           onViewportCenteredHunkChange={(fileId, hunkIndex) =>
             review.selectHunk(fileId, hunkIndex, { preserveViewport: true })
           }

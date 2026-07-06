@@ -9,6 +9,7 @@ import {
 } from "@pierre/diffs";
 import { formatHunkHeader } from "../../core/hunkHeader";
 import type { DiffFile, DiffLineMoveKind } from "../../core/types";
+import type { GapExpansion } from "./gapExpansion";
 import { blendHex, hexColorDistance } from "../lib/color";
 import { sanitizeTerminalLine } from "../../lib/terminalText";
 import { TRANSPARENT_BACKGROUND, type AppTheme } from "../themes";
@@ -145,6 +146,10 @@ export type DiffRow =
       // uses these to slice the file contents that fill the gap.
       oldRange: [number, number];
       newRange: [number, number];
+      // Present on residual separators emitted by expandCollapsedRows: how many
+      // lines are already revealed from each edge of the (shrunk) gap. Lets the
+      // renderer show a Hide/reset affordance only once something is revealed.
+      expansion?: GapExpansion;
     }
   | {
       type: "hunk-header";

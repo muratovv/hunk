@@ -2,6 +2,7 @@ import type { KeyEvent } from "@opentui/core";
 import { useKeyboard } from "@opentui/react";
 import { useRef } from "react";
 import type { LayoutMode } from "../../core/types";
+import type { GapEdge } from "../diff/gapExpansion";
 import type { MenuId } from "../components/chrome/menu";
 import {
   isCreateReviewNoteKey,
@@ -50,6 +51,14 @@ function isUppercaseMKey(key: KeyEvent) {
   );
 }
 
+/** Detect Shift-Z (expand-down) without stealing the lowercase expand-up toggle. */
+function isUppercaseZKey(key: KeyEvent) {
+  return (
+    (key.sequence === "Z" && !key.option && !key.ctrl && !key.meta) ||
+    (key.name === "z" && key.shift && !key.option && !key.ctrl && !key.meta)
+  );
+}
+
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
@@ -81,7 +90,7 @@ export interface UseAppKeyboardShortcutsOptions {
   switchMenu: (delta: number) => void;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
-  toggleGapForSelectedHunk: () => void;
+  expandSelectedHunkGap: (edge: GapEdge) => void;
   toggleHelp: () => void;
   toggleHunkHeaders: () => void;
   toggleLineNumbers: () => void;
@@ -125,7 +134,7 @@ export function useAppKeyboardShortcuts({
   switchMenu,
   toggleAgentNotes,
   toggleFocusArea,
-  toggleGapForSelectedHunk,
+  expandSelectedHunkGap,
   toggleHelp,
   themeSelectorOpen,
   toggleHunkHeaders,
@@ -535,8 +544,13 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
+    if (isUppercaseZKey(key)) {
+      runAndCloseMenu(() => expandSelectedHunkGap("bottom"));
+      return;
+    }
+
     if (key.name === "z" || key.sequence === "z") {
-      runAndCloseMenu(toggleGapForSelectedHunk);
+      runAndCloseMenu(() => expandSelectedHunkGap("top"));
       return;
     }
 

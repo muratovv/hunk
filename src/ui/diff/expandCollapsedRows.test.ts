@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { expandCollapsedRows, gapKey, selectGapForKeyboardToggle } from "./expandCollapsedRows";
+import type { GapExpansion } from "./gapExpansion";
 import type { DiffRow } from "./pierre";
 
 function makeCollapsedRow(
@@ -30,6 +31,11 @@ function makeHunkHeader(hunkIndex: number): Extract<DiffRow, { type: "hunk-heade
   };
 }
 
+/** Build an `expansionByKey` map from `[gapKey, {top, bottom}]` entries. */
+function expansions(...entries: Array<[string, GapExpansion]>): Map<string, GapExpansion> {
+  return new Map(entries);
+}
+
 const SOURCE = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"].join("\n") + "\n";
 const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
 const CSI_CLEAR_SCREEN = "\x1b[2J";
@@ -45,13 +51,21 @@ function expectNoUnsafeTerminalControls(text: string) {
   expect(text).not.toContain("\x1b");
 }
 
+function collapsedAt(rows: DiffRow[], index: number): Extract<DiffRow, { type: "collapsed" }> {
+  const row = rows[index];
+  if (!row || row.type !== "collapsed") {
+    throw new Error(`expected collapsed row at ${index}`);
+  }
+  return row;
+}
+
 describe("expandCollapsedRows", () => {
   test("returns rows unchanged when no gaps are expanded", () => {
     const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 2], [1, 2]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set(),
+      expansionByKey: new Map(),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
@@ -59,22 +73,31 @@ describe("expandCollapsedRows", () => {
     expect(result).toBe(rows);
   });
 
+  test("returns rows unchanged when a gap maps to a zero expansion", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 2], [1, 2]), makeHunkHeader(0)];
+
+    const result = expandCollapsedRows(rows, {
+      layout: "split",
+      expansionByKey: expansions([gapKey("before", 0), { top: 0, bottom: 0 }]),
+      sourceStatus: { kind: "loaded", text: SOURCE },
+      side: "new",
+    });
+
+    expect(result.map((row) => row.type)).toEqual(["collapsed", "hunk-header"]);
+  });
+
   test("leaves the row unchanged when expansion is requested before status arrives", () => {
     const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 2], [1, 2]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 2, bottom: 0 }]),
       sourceStatus: undefined,
       side: "new",
     });
 
     expect(result.map((row) => row.type)).toEqual(["collapsed", "hunk-header"]);
-    const collapsed = result[0];
-    if (!collapsed || collapsed.type !== "collapsed") {
-      throw new Error("expected first row to be collapsed");
-    }
-    expect(collapsed.text.toLowerCase()).not.toContain("hide");
+    const collapsed = collapsedAt(result, 0);
     expect(collapsed.text.toLowerCase()).not.toContain("loading");
   });
 
@@ -83,17 +106,13 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 2, bottom: 0 }]),
       sourceStatus: { kind: "loading" },
       side: "new",
     });
 
     expect(result.map((row) => row.type)).toEqual(["collapsed", "hunk-header"]);
-    const collapsed = result[0];
-    if (!collapsed || collapsed.type !== "collapsed") {
-      throw new Error("expected first row to be collapsed");
-    }
-    expect(collapsed.text.toLowerCase()).toContain("loading");
+    expect(collapsedAt(result, 0).text.toLowerCase()).toContain("loading");
   });
 
   test("rewrites the label when source could not be loaded", () => {
@@ -101,17 +120,13 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 2, bottom: 0 }]),
       sourceStatus: { kind: "error" },
       side: "new",
     });
 
     expect(result.map((row) => row.type)).toEqual(["collapsed", "hunk-header"]);
-    const collapsed = result[0];
-    if (!collapsed || collapsed.type !== "collapsed") {
-      throw new Error("expected first row to be collapsed");
-    }
-    expect(collapsed.text.toLowerCase()).toContain("could not load");
+    expect(collapsedAt(result, 0).text.toLowerCase()).toContain("could not load");
   });
 
   test("rewrites the label when source is too large to expand", () => {
@@ -119,111 +134,152 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 3, bottom: 0 }]),
       sourceStatus: { kind: "error", reason: "too-large" },
       side: "new",
     });
 
-    const collapsed = result[0];
-    if (!collapsed || collapsed.type !== "collapsed") {
-      throw new Error("expected first row to be collapsed");
-    }
-    expect(collapsed.text.toLowerCase()).toContain("source too large");
+    expect(collapsedAt(result, 0).text.toLowerCase()).toContain("source too large");
   });
 
-  test("inserts split-line context rows after the expanded collapsed row", () => {
-    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 3], [1, 3]), makeHunkHeader(0)];
+  test("expanding the top edge reveals lines above the residual separator", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 6], [1, 6]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 2, bottom: 0 }]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
 
-    expect(result.length).toBe(rows.length + 3);
-    expect(result[0]?.type).toBe("collapsed");
+    // [alpha][beta][residual 4 hidden][hunk-header]
+    expect(result.map((row) => row.type)).toEqual([
+      "split-line",
+      "split-line",
+      "collapsed",
+      "hunk-header",
+    ]);
 
-    const inserted = result.slice(1, 4);
-    expect(inserted.every((row) => row.type === "split-line")).toBe(true);
-
-    const first = inserted[0];
+    const first = result[0];
     if (!first || first.type !== "split-line") {
-      throw new Error("expected split-line context rows");
+      throw new Error("expected split-line");
     }
-
-    expect(first.left.kind).toBe("context");
-    expect(first.right.kind).toBe("context");
     expect(first.left.lineNumber).toBe(1);
-    expect(first.right.lineNumber).toBe(1);
     expect(first.left.spans[0]?.text).toBe("alpha");
-    expect(first.right.spans[0]?.text).toBe("alpha");
 
-    const third = inserted[2];
-    if (!third || third.type !== "split-line") {
-      throw new Error("expected three context rows");
-    }
-    expect(third.left.lineNumber).toBe(3);
-    expect(third.right.spans[0]?.text).toBe("gamma");
+    const residual = collapsedAt(result, 2);
+    expect(residual.text).toBe("4 unchanged lines");
+    expect(residual.oldRange).toEqual([3, 6]);
+    expect(residual.expansion).toEqual({ top: 2, bottom: 0 });
   });
 
-  test("inserts stack-line context rows when layout is stack", () => {
-    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [2, 3], [2, 3]), makeHunkHeader(0)];
+  test("expanding the bottom edge reveals lines below the residual separator", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 6], [1, 6]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 0, bottom: 2 }]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
 
-    const inserted = result.slice(1, 3);
-    expect(inserted.every((row) => row.type === "stack-line")).toBe(true);
+    // [residual 4 hidden][epsilon][zeta][hunk-header]
+    expect(result.map((row) => row.type)).toEqual([
+      "collapsed",
+      "stack-line",
+      "stack-line",
+      "hunk-header",
+    ]);
 
-    const first = inserted[0];
-    if (!first || first.type !== "stack-line") {
-      throw new Error("expected stack-line context rows");
+    const residual = collapsedAt(result, 0);
+    expect(residual.text).toBe("4 unchanged lines");
+    expect(residual.newRange).toEqual([1, 4]);
+
+    const last = result[2];
+    if (!last || last.type !== "stack-line") {
+      throw new Error("expected stack-line");
     }
-    expect(first.cell.kind).toBe("context");
-    expect(first.cell.oldLineNumber).toBe(2);
-    expect(first.cell.newLineNumber).toBe(2);
-    expect(first.cell.spans[0]?.text).toBe("beta");
+    expect(last.cell.newLineNumber).toBe(6);
+    expect(last.cell.spans[0]?.text).toBe("zeta");
   });
 
-  test("changes the collapsed-row label to indicate expansion", () => {
-    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 2], [1, 2]), makeHunkHeader(0)];
+  test("expanding both edges sandwiches the residual separator", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 6], [1, 6]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 1, bottom: 1 }]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
 
-    const collapsed = result[0];
-    if (!collapsed || collapsed.type !== "collapsed") {
-      throw new Error("expected first row to be the collapsed marker");
-    }
-    expect(collapsed.text.toLowerCase()).toContain("hide");
+    expect(result.map((row) => row.type)).toEqual([
+      "split-line",
+      "collapsed",
+      "split-line",
+      "hunk-header",
+    ]);
+    const residual = collapsedAt(result, 1);
+    expect(residual.text).toBe("4 unchanged lines");
+    expect(residual.newRange).toEqual([2, 5]);
   });
 
-  test("expands trailing gaps from the requested side", () => {
+  test("a fully expanded gap emits only source lines with no separator", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 6], [1, 6]), makeHunkHeader(0)];
+
+    const result = expandCollapsedRows(rows, {
+      layout: "split",
+      expansionByKey: expansions([gapKey("before", 0), { top: 3, bottom: 3 }]),
+      sourceStatus: { kind: "loaded", text: SOURCE },
+      side: "new",
+    });
+
+    expect(result.filter((row) => row.type === "collapsed")).toHaveLength(0);
+    expect(result.filter((row) => row.type === "split-line")).toHaveLength(6);
+    const texts = result
+      .filter((row): row is Extract<DiffRow, { type: "split-line" }> => row.type === "split-line")
+      .map((row) => row.left.spans[0]?.text);
+    expect(texts).toEqual(["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]);
+  });
+
+  test("over-requested expansion clamps to the gap and fully reveals it", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 6], [1, 6]), makeHunkHeader(0)];
+
+    const result = expandCollapsedRows(rows, {
+      layout: "split",
+      expansionByKey: expansions([gapKey("before", 0), { top: 99, bottom: 99 }]),
+      sourceStatus: { kind: "loaded", text: SOURCE },
+      side: "new",
+    });
+
+    expect(result.filter((row) => row.type === "collapsed")).toHaveLength(0);
+    expect(result.filter((row) => row.type === "split-line")).toHaveLength(6);
+  });
+
+  test("expands trailing gaps from the requested (bottom) side", () => {
     const rows: DiffRow[] = [makeHunkHeader(0), makeCollapsedRow("trailing", 0, [4, 6], [4, 6])];
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("trailing", 0)]),
+      expansionByKey: expansions([gapKey("trailing", 0), { top: 0, bottom: 2 }]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
 
-    expect(result.length).toBe(rows.length + 3);
-    const last = result[result.length - 1];
+    // [hunk-header][residual 1 hidden][epsilon][zeta]
+    expect(result.map((row) => row.type)).toEqual([
+      "hunk-header",
+      "collapsed",
+      "stack-line",
+      "stack-line",
+    ]);
+    expect(collapsedAt(result, 1).text).toBe("1 unchanged line");
+    const last = result[3];
     if (!last || last.type !== "stack-line") {
-      throw new Error("expected synthesized stack-line rows after the trailing collapsed row");
+      throw new Error("expected stack-line");
     }
-    expect(last.cell.spans[0]?.text).toBe("zeta");
     expect(last.cell.newLineNumber).toBe(6);
+    expect(last.cell.spans[0]?.text).toBe("zeta");
   });
 
   test("uses the old-side range when side is `old`", () => {
@@ -231,20 +287,20 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 1, bottom: 0 }]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "old",
     });
 
-    const inserted = result.slice(1, 3);
-    const first = inserted[0];
+    const first = result[0];
     if (!first || first.type !== "split-line") {
-      throw new Error("expected split-line context rows");
+      throw new Error("expected split-line context row");
     }
     expect(first.left.lineNumber).toBe(2);
     expect(first.right.lineNumber).toBe(10);
     expect(first.left.spans[0]?.text).toBe("beta");
-    expect(first.right.spans[0]?.text).toBe("beta");
+    // Residual carries the shrunk old-side range.
+    expect(collapsedAt(result, 1).oldRange).toEqual([3, 3]);
   });
 
   test("normalizes CRLF so expanded rows do not carry a stray carriage return", () => {
@@ -253,12 +309,12 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 2, bottom: 0 }]),
       sourceStatus: { kind: "loaded", text: sourceWithCrlf },
       side: "new",
     });
 
-    const inserted = result[1];
+    const inserted = result[0];
     if (!inserted || inserted.type !== "stack-line") {
       throw new Error("expected stack-line context row");
     }
@@ -271,12 +327,12 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 1, bottom: 0 }]),
       sourceStatus: { kind: "loaded", text: sourceWithControls },
       side: "new",
     });
 
-    const inserted = result[1];
+    const inserted = result[0];
     if (!inserted || inserted.type !== "stack-line") {
       throw new Error("expected one stack-line row");
     }
@@ -294,12 +350,12 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 1, bottom: 0 }]),
       sourceStatus: { kind: "loaded", text: sourceWithTab },
       side: "new",
     });
 
-    const inserted = result[1];
+    const inserted = result[0];
     if (!inserted || inserted.type !== "stack-line") {
       throw new Error("expected one stack-line row");
     }
@@ -312,7 +368,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 2, bottom: 0 }]),
       sourceStatus: { kind: "loaded", text: SOURCE },
       sourceLineSpans: (line, sourceLineNumber) => {
         calls.push({ line, sourceLineNumber });
@@ -326,7 +382,7 @@ describe("expandCollapsedRows", () => {
       { line: "gamma", sourceLineNumber: 2 },
     ]);
 
-    const inserted = result[1];
+    const inserted = result[0];
     if (!inserted || inserted.type !== "stack-line") {
       throw new Error("expected stack-line context row");
     }
@@ -338,18 +394,14 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "stack",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 3, bottom: 0 }]),
       sourceStatus: { kind: "loaded", text: "alpha\n" },
       side: "new",
     });
 
     expect(result.map((row) => row.type)).toEqual(["collapsed", "hunk-header"]);
-    const collapsed = result[0];
-    if (!collapsed || collapsed.type !== "collapsed") {
-      throw new Error("expected first row to be collapsed");
-    }
+    const collapsed = collapsedAt(result, 0);
     expect(collapsed.text.toLowerCase()).toContain("could not load");
-    expect(collapsed.text.toLowerCase()).not.toContain("hide");
   });
 
   test("shows an error row when old-side split expansion is out of bounds", () => {
@@ -357,17 +409,13 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([gapKey("before", 0)]),
+      expansionByKey: expansions([gapKey("before", 0), { top: 2, bottom: 0 }]),
       sourceStatus: { kind: "loaded", text: "alpha\n" },
       side: "old",
     });
 
     expect(result.map((row) => row.type)).toEqual(["collapsed", "hunk-header"]);
-    const collapsed = result[0];
-    if (!collapsed || collapsed.type !== "collapsed") {
-      throw new Error("expected first row to be collapsed");
-    }
-    expect(collapsed.text.toLowerCase()).toContain("could not load");
+    expect(collapsedAt(result, 0).text.toLowerCase()).toContain("could not load");
   });
 });
 
@@ -398,8 +446,6 @@ describe("selectGapForKeyboardToggle", () => {
 
   test("clamps a stale selectedHunkIndex into the valid range", () => {
     const hunks = [{ collapsedBefore: 4 }, { collapsedBefore: 0 }];
-    // Stale index 99 clamps to the last hunk (1); that hunk has no leading gap,
-    // so the trailing gap is the only reachable target.
     expect(selectGapForKeyboardToggle(hunks, 99, true)).toBe(gapKey("trailing", 1));
   });
 });

@@ -1214,7 +1214,7 @@ describe("UI components", () => {
       "export const second = 2;\n",
     );
     const files = [firstFile, secondFile];
-    const expandedKeys = new Set(["trailing:0"]);
+    const expandedKeys = new Map([["trailing:0", { top: Number.MAX_SAFE_INTEGER, bottom: 0 }]]);
     const sourceStatus = { kind: "loaded", text: after } as const;
     const firstGeometry = measureDiffSectionGeometry(
       firstFile,
@@ -1237,7 +1237,7 @@ describe("UI components", () => {
     const scrollRef = createRef<ScrollBoxRenderable>();
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 88,
-      expandedGapsByFileId: { [firstFile.id]: expandedKeys },
+      gapExpansionsByFileId: { [firstFile.id]: expandedKeys },
       headerLabelWidth: 48,
       headerStatsWidth: 16,
       scrollRef,
@@ -2787,12 +2787,12 @@ describe("UI components", () => {
         width={120}
         selectedHunkIndex={0}
         scrollable={false}
-        onToggleGap={() => {}}
+        onGapAction={() => {}}
       />,
       120,
       40,
     );
-    expect(expandableFrame).toContain("▾");
+    expect(expandableFrame).toContain("▲");
   });
 
   test("PierreDiffView hides add-note affordances on collapsed and hunk-header rows", async () => {
@@ -2811,7 +2811,7 @@ describe("UI components", () => {
         selectedHunkIndex={0}
         scrollable={false}
         onStartUserNoteAtHunk={() => {}}
-        onToggleGap={() => {}}
+        onGapAction={() => {}}
       />,
       { width: 120, height: 40 },
     );
@@ -2882,7 +2882,7 @@ describe("UI components", () => {
         width={120}
         selectedHunkIndex={0}
         scrollable={false}
-        onToggleGap={(gapKey) => {
+        onGapAction={(gapKey) => {
           toggledGaps.push(gapKey);
         }}
       />,
@@ -2895,7 +2895,7 @@ describe("UI components", () => {
       });
 
       const frame = setup.captureCharFrame();
-      const gapLineIndex = frame.split("\n").findIndex((line) => line.includes("▾"));
+      const gapLineIndex = frame.split("\n").findIndex((line) => line.includes("▲"));
       expect(gapLineIndex).toBeGreaterThanOrEqual(0);
 
       for (const y of [gapLineIndex, gapLineIndex + 1]) {
@@ -2944,7 +2944,7 @@ describe("UI components", () => {
         theme={theme}
         width={140}
         selectedHunkIndex={0}
-        expandedGapKeys={new Set(["before:0"])}
+        gapExpansions={new Map([["before:0", { top: Number.MAX_SAFE_INTEGER, bottom: 0 }]])}
         sourceStatus={{ kind: "loaded", text: after }}
         scrollable={false}
       />,

@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { DiffFile, LayoutMode, UserNoteLineTarget } from "../../../core/types";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
+import type { GapAction, GapExpansion } from "../../diff/gapExpansion";
 import { PierreDiffView, type ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { VisibleBodyBounds } from "../../diff/rowWindowing";
 import type { DiffSectionGeometry } from "../../diff/diffSectionGeometry";
@@ -13,7 +14,7 @@ import { DiffFileHeaderRow } from "./DiffFileHeaderRow";
 
 interface DiffSectionProps {
   codeHorizontalOffset: number;
-  expandedGapKeys: ReadonlySet<string>;
+  gapExpansions: ReadonlyMap<string, GapExpansion>;
   file: DiffFile;
   headerLabelWidth: number;
   headerStatsWidth: number;
@@ -41,13 +42,13 @@ interface DiffSectionProps {
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onSelect: () => void;
-  onToggleGap: (gapKey: string) => void;
+  onGapAction: (gapKey: string, action: GapAction) => void;
 }
 
 /** Render one file section in the main review stream. */
 function DiffSectionComponent({
   codeHorizontalOffset,
-  expandedGapKeys,
+  gapExpansions,
   file,
   headerLabelWidth,
   headerStatsWidth,
@@ -75,7 +76,7 @@ function DiffSectionComponent({
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
   onSelect,
-  onToggleGap,
+  onGapAction,
 }: DiffSectionProps) {
   return (
     <box
@@ -114,7 +115,7 @@ function DiffSectionComponent({
       ) : null}
 
       <PierreDiffView
-        expandedGapKeys={expandedGapKeys}
+        gapExpansions={gapExpansions}
         file={file}
         layout={layout}
         showLineNumbers={showLineNumbers}
@@ -132,7 +133,7 @@ function DiffSectionComponent({
         onHover={onHover}
         onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
         onStartUserNoteAtHunk={onStartUserNoteAtHunk}
-        onToggleGap={onToggleGap}
+        onGapAction={onGapAction}
         selectedHunkIndex={selectedHunkIndex}
         sectionGeometry={sectionGeometry}
         shouldLoadHighlight={shouldLoadHighlight}
@@ -151,7 +152,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
   // numerically unchanged, so a reference change here always means the visible slice moved.
   return (
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
-    previous.expandedGapKeys === next.expandedGapKeys &&
+    previous.gapExpansions === next.gapExpansions &&
     previous.file === next.file &&
     previous.headerLabelWidth === next.headerLabelWidth &&
     previous.headerStatsWidth === next.headerStatsWidth &&

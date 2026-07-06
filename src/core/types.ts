@@ -97,6 +97,8 @@ export interface CommonOptions {
   copyDecorations?: boolean;
   transparentBackground?: boolean;
   colorMoved?: boolean;
+  /** Lines revealed per ▲/▼ gap-expansion step. Positive integer; defaults to 20. */
+  expandStep?: number;
 }
 
 export interface CustomSyntaxColorsConfig {
