@@ -20,6 +20,7 @@ import type {
   UserNoteLineTarget,
 } from "../../../core/types";
 import type { FileSourceStatus } from "../../diff/expandCollapsedRows";
+import type { GapAction, GapExpansion } from "../../diff/gapExpansion";
 import type { ActiveAddNoteAffordance } from "../../diff/PierreDiffView";
 import type { DraftReviewNote } from "../../hooks/useReviewController";
 import {
@@ -166,16 +167,16 @@ function buildHighlightPrefetchFileIds({
   return next;
 }
 
-const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
-const EMPTY_EXPANDED_GAPS_BY_FILE_ID: Record<string, ReadonlySet<string>> = {};
+const EMPTY_GAP_EXPANSIONS: ReadonlyMap<string, GapExpansion> = new Map();
+const EMPTY_GAP_EXPANSIONS_BY_FILE_ID: Record<string, ReadonlyMap<string, GapExpansion>> = {};
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
-const NOOP_TOGGLE_GAP = () => {};
+const NOOP_GAP_ACTION = () => {};
 
 /** Render the main multi-file review stream. */
 export function DiffPane({
   codeHorizontalOffset = 0,
   diffContentWidth,
-  expandedGapsByFileId = EMPTY_EXPANDED_GAPS_BY_FILE_ID,
+  gapExpansionsByFileId = EMPTY_GAP_EXPANSIONS_BY_FILE_ID,
   files,
   headerLabelWidth,
   headerStatsWidth,
@@ -217,12 +218,12 @@ export function DiffPane({
   onCopySelectionText,
   onScrollCodeHorizontally = () => {},
   onSelectFile,
-  onToggleGap = NOOP_TOGGLE_GAP,
+  onGapAction = NOOP_GAP_ACTION,
   onViewportCenteredHunkChange,
 }: {
   codeHorizontalOffset?: number;
   diffContentWidth: number;
-  expandedGapsByFileId?: Record<string, ReadonlySet<string>>;
+  gapExpansionsByFileId?: Record<string, ReadonlyMap<string, GapExpansion>>;
   files: DiffFile[];
   headerLabelWidth: number;
   headerStatsWidth: number;
@@ -266,7 +267,7 @@ export function DiffPane({
   onCopySelectionText?: (text: string) => void | boolean;
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
-  onToggleGap?: (fileId: string, gapKey: string) => void;
+  onGapAction?: (fileId: string, gapKey: string, action: GapAction) => void;
   onViewportCenteredHunkChange?: (fileId: string, hunkIndex: number) => void;
 }) {
   const renderTopChrome = showTopChrome ?? !pagerMode;
@@ -658,14 +659,14 @@ export function DiffPane({
           diffContentWidth,
           showLineNumbers,
           wrapLines,
-          expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
+          gapExpansionsByFileId[file.id] ?? EMPTY_GAP_EXPANSIONS,
           sourceStatusByFileId[file.id],
           reserveAddNoteColumn,
         ),
       ),
     [
       diffContentWidth,
-      expandedGapsByFileId,
+      gapExpansionsByFileId,
       files,
       layout,
       reserveAddNoteColumn,
@@ -700,7 +701,7 @@ export function DiffPane({
           diffContentWidth,
           showLineNumbers,
           wrapLines,
-          expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
+          gapExpansionsByFileId[file.id] ?? EMPTY_GAP_EXPANSIONS,
           sourceStatusByFileId[file.id],
           reserveAddNoteColumn,
         );
@@ -709,7 +710,7 @@ export function DiffPane({
       allAgentNotesByFile,
       baseSectionGeometry,
       diffContentWidth,
-      expandedGapsByFileId,
+      gapExpansionsByFileId,
       files,
       layout,
       reserveAddNoteColumn,
@@ -1800,7 +1801,7 @@ export function DiffPane({
                     <DiffSection
                       key={file.id}
                       codeHorizontalOffset={codeHorizontalOffset}
-                      expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
+                      gapExpansions={gapExpansionsByFileId[file.id] ?? EMPTY_GAP_EXPANSIONS}
                       file={file}
                       headerLabelWidth={headerLabelWidth}
                       headerStatsWidth={headerStatsWidth}
@@ -1838,7 +1839,7 @@ export function DiffPane({
                         reserveAddNoteColumn ? startUserNoteAtHunkCallback(file.id) : undefined
                       }
                       onSelect={selectFileCallback(file.id)}
-                      onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
+                      onGapAction={(gapKey, action) => onGapAction(file.id, gapKey, action)}
                     />
                   );
                 })}

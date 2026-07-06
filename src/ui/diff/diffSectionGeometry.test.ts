@@ -252,7 +252,7 @@ describe("measureDiffSectionGeometry", () => {
       0,
       true,
       false,
-      new Set(["trailing:0"]),
+      new Map([["trailing:0", { top: Number.MAX_SAFE_INTEGER, bottom: 0 }]]),
       { kind: "loaded", text: after },
     );
 
@@ -303,7 +303,7 @@ describe("measureDiffSectionGeometry", () => {
       0,
       true,
       false,
-      new Set(["before:0"]),
+      new Map([["before:0", { top: Number.MAX_SAFE_INTEGER, bottom: 0 }]]),
       { kind: "loaded", text: after },
     );
 
@@ -339,7 +339,7 @@ describe("measureDiffSectionGeometry", () => {
       id: "large-expanded-gutter",
       path: "large-expanded-gutter.txt",
     });
-    const expandedKeys = new Set(["trailing:0"]);
+    const expandedKeys = new Map([["trailing:0", { top: Number.MAX_SAFE_INTEGER, bottom: 0 }]]);
     const sourceStatus = { kind: "loaded", text: after } as const;
 
     const nowrapGeometry = measureDiffSectionGeometry(
@@ -390,7 +390,7 @@ describe("measureDiffSectionGeometry", () => {
         },
       },
     ];
-    const expandedKeys = new Set(["trailing:0"]);
+    const expandedKeys = new Map([["trailing:0", { top: Number.MAX_SAFE_INTEGER, bottom: 0 }]]);
     const shortSourceLines = [...afterLines];
     const longSourceLines = [...afterLines];
     const shortLine = "short";

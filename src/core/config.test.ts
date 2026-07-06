@@ -102,6 +102,39 @@ describe("config resolution", () => {
     });
   });
 
+  test("resolves expandStep from config, defaulting and validating it", () => {
+    const home = createTempDir("hunk-config-home-");
+    const configPath = join(home, ".config", "hunk", "config.toml");
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+
+    // Defaults to 20 when unset.
+    const defaulted = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: home,
+      env: { HOME: home },
+    });
+    expect(defaulted.input.options.expandStep).toBe(20);
+
+    // A valid positive integer is honored.
+    writeFileSync(configPath, "expand_step = 40\n");
+    expect(
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: home, env: { HOME: home } }).input
+        .options.expandStep,
+    ).toBe(40);
+
+    // Non-positive and non-integer values fall back to the default.
+    writeFileSync(configPath, "expand_step = 0\n");
+    expect(
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: home, env: { HOME: home } }).input
+        .options.expandStep,
+    ).toBe(20);
+
+    writeFileSync(configPath, "expand_step = 2.5\n");
+    expect(
+      resolveConfiguredCliInput(createPatchPagerInput(), { cwd: home, env: { HOME: home } }).input
+        .options.expandStep,
+    ).toBe(20);
+  });
+
   test("merges custom theme overrides from global and repo config", () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");

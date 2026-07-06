@@ -1,5 +1,6 @@
 import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
 import { expandDiffTabs } from "./codeColumns";
+import { clampExpansion, gapSize, hiddenMiddle, type GapExpansion } from "./gapExpansion";
 import type {
   CollapsedGapPosition,
   DiffRow,
@@ -18,7 +19,11 @@ export type FileSourceStatus =
 
 export interface ExpandCollapsedRowsOptions {
   layout: ExpansionLayout;
-  expandedKeys: ReadonlySet<string>;
+  /**
+   * Per-gap directional expansion, keyed by {@link gapKey}. A gap absent from
+   * the map (or mapped to a zero expansion) renders as a plain collapsed row.
+   */
+  expansionByKey: ReadonlyMap<string, GapExpansion>;
   sourceStatus: FileSourceStatus | undefined;
   /** Optional syntax-aware span resolver for a zero-based source line. */
   sourceLineSpans?: (line: string | undefined, sourceLineNumber: number) => RenderSpan[];
@@ -61,8 +66,9 @@ export function selectGapForKeyboardToggle(
   return null;
 }
 
-function expandedRowText(lineCount: number) {
-  return `Hide ${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}`;
+/** Label for the residual separator: how many unchanged lines are still hidden. */
+function hiddenLinesText(lineCount: number) {
+  return `${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}`;
 }
 
 function loadingRowText(lineCount: number) {
@@ -144,19 +150,20 @@ function buildStackContextRow(
 }
 
 /**
- * Replace each expanded collapsed row with the actual unchanged file lines it
- * represents. The original collapsed row stays in place as a status row, and
- * synthesized context rows follow it when source has loaded. When source is
- * still loading or failed, only the row label changes so the user sees the
- * state of the request.
+ * Replace each directionally expanded collapsed gap with the unchanged source
+ * lines it now reveals. A partially expanded gap emits its revealed top lines,
+ * then a residual collapsed separator for the still-hidden middle, then its
+ * revealed bottom lines. A fully expanded gap emits only source lines and no
+ * separator (GitHub-style). While source is loading or failed, the single
+ * collapsed row stays in place carrying a status label instead.
  */
 export function expandCollapsedRows(
   rows: DiffRow[],
   options: ExpandCollapsedRowsOptions,
 ): DiffRow[] {
-  const { layout, expandedKeys, sourceLineSpans, sourceStatus, side = "new" } = options;
+  const { layout, expansionByKey, sourceLineSpans, sourceStatus, side = "new" } = options;
 
-  if (expandedKeys.size === 0) {
+  if (expansionByKey.size === 0) {
     return rows;
   }
 
@@ -170,27 +177,29 @@ export function expandCollapsedRows(
     }
 
     const key = gapKey(row.position, row.hunkIndex);
-    if (!expandedKeys.has(key)) {
+    const range = side === "old" ? row.oldRange : row.newRange;
+    const total = gapSize(range);
+    const requested = expansionByKey.get(key);
+    const expansion = requested ? clampExpansion(requested, total) : null;
+
+    if (!expansion || (expansion.top === 0 && expansion.bottom === 0)) {
       result.push(row);
       continue;
     }
 
-    const range = side === "old" ? row.oldRange : row.newRange;
-    const lineCount = Math.max(0, range[1] - range[0] + 1);
-
     if (sourceStatus?.kind === "loading") {
-      result.push({ ...row, text: loadingRowText(lineCount) });
+      result.push({ ...row, text: loadingRowText(total) });
       continue;
     }
 
     if (sourceStatus?.kind === "error") {
-      result.push({ ...row, text: errorRowText(lineCount, sourceStatus.reason) });
+      result.push({ ...row, text: errorRowText(total, sourceStatus.reason) });
       continue;
     }
 
     if (sourceStatus === undefined) {
-      // expandedKeys can briefly contain a key before the controller's load
-      // status is committed; keep the original label until status arrives.
+      // The controller can commit an expansion a tick before the load status;
+      // keep the original label until the fetch status arrives.
       result.push(row);
       continue;
     }
@@ -198,26 +207,22 @@ export function expandCollapsedRows(
     const sourceStartIndex = range[0] - 1;
     const sourceEndIndex = range[1] - 1;
     if (
-      lineCount > 0 &&
+      total > 0 &&
       (sourceStartIndex < 0 ||
         sourceEndIndex < sourceStartIndex ||
         sourceEndIndex >= sourceLines.length)
     ) {
-      result.push({ ...row, text: errorRowText(lineCount) });
+      result.push({ ...row, text: errorRowText(total) });
       continue;
     }
 
-    result.push({
-      ...row,
-      text: expandedRowText(lineCount),
-    });
-
-    for (let offset = 0; offset < lineCount; offset += 1) {
+    // Materialize one synthesized context row for a 0-based offset into the gap.
+    const pushContextRow = (offset: number) => {
       const oldLineNumber = row.oldRange[0] + offset;
       const newLineNumber = row.newRange[0] + offset;
       const sourceLineNumber = (side === "old" ? oldLineNumber : newLineNumber) - 1;
       if (sourceLineNumber < 0 || sourceLineNumber >= sourceLines.length) {
-        break;
+        return;
       }
 
       const text = sourceLines[sourceLineNumber];
@@ -246,6 +251,30 @@ export function expandCollapsedRows(
               spans,
             ),
       );
+    };
+
+    // Top revealed lines — adjacent to the content preceding the gap.
+    for (let offset = 0; offset < expansion.top; offset += 1) {
+      pushContextRow(offset);
+    }
+
+    // Residual separator for the still-hidden middle; omitted once fully open.
+    const middle = hiddenMiddle(expansion, total);
+    if (middle) {
+      const oldStart = row.oldRange[0] + middle.startOffset;
+      const newStart = row.newRange[0] + middle.startOffset;
+      result.push({
+        ...row,
+        text: hiddenLinesText(middle.count),
+        oldRange: [oldStart, oldStart + middle.count - 1],
+        newRange: [newStart, newStart + middle.count - 1],
+        expansion,
+      });
+    }
+
+    // Bottom revealed lines — adjacent to the content following the gap.
+    for (let offset = total - expansion.bottom; offset < total; offset += 1) {
+      pushContextRow(offset);
     }
   }
 

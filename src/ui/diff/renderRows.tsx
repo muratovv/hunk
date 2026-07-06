@@ -7,6 +7,7 @@ import {
   resolveStackCellGeometry,
 } from "./codeColumns";
 import { gapKey } from "./expandCollapsedRows";
+import type { GapAction } from "./gapExpansion";
 import type { DiffRow, RenderSpan, SplitLineCell, StackLineCell } from "./pierre";
 import {
   diffRailMarker,
@@ -1134,6 +1135,79 @@ function collapsedRowLabel(text: string, expandable: boolean) {
   return `▾ ${text}`;
 }
 
+/** One clickable directional zone (▲ / ▼ / Hide) inside an expandable gap row. */
+function gapZone(
+  key: string,
+  text: string,
+  fg: string,
+  bg: string,
+  onClick: () => void,
+): ReactNode {
+  return (
+    <box key={key} style={{ width: measureTextWidth(text), height: 1 }} onMouseUp={onClick}>
+      <text>
+        <span fg={fg} bg={bg}>
+          {text}
+        </span>
+      </text>
+    </box>
+  );
+}
+
+/**
+ * Render an expandable collapsed gap as a control row: ▲ reveals the next step
+ * of unchanged lines from the top edge, ▼ from the bottom, and — once anything
+ * is revealed — Hide collapses the gap back to zero.
+ */
+function renderExpandableCollapsedRow(
+  row: Extract<DiffRow, { type: "collapsed" }>,
+  width: number,
+  theme: AppTheme,
+  selected: boolean,
+  anchorId: string | undefined,
+  onHoverRow: ((rowKey: string) => void) | undefined,
+  onGapAction: (gapKey: string, action: GapAction) => void,
+): ReactNode {
+  const key = gapKey(row.position, row.hunkIndex);
+  const revealed = (row.expansion?.top ?? 0) + (row.expansion?.bottom ?? 0) > 0;
+  const railFg = selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme);
+  const upText = " ▲ ";
+  const downText = " ▼ ";
+  const hideText = revealed ? " Hide " : "";
+  const fixedWidth =
+    measureTextWidth(upText) + measureTextWidth(downText) + measureTextWidth(hideText);
+  const label = fitText(` ${row.text} `, Math.max(0, width - fixedWidth));
+
+  return (
+    <box
+      key={row.key}
+      id={anchorId}
+      style={{ width, height: 1, flexDirection: "row", backgroundColor: theme.panelAlt }}
+      onMouseMove={() => onHoverRow?.(row.key)}
+      onMouseOver={() => onHoverRow?.(row.key)}
+    >
+      {gapZone(`${row.key}:up`, upText, railFg, theme.panelAlt, () =>
+        onGapAction(key, "expand-top"),
+      )}
+      <box style={{ width: Math.max(0, measureTextWidth(label)), height: 1 }}>
+        <text>
+          <span fg={theme.muted} bg={theme.panelAlt}>
+            {label}
+          </span>
+        </text>
+      </box>
+      {revealed
+        ? gapZone(`${row.key}:hide`, hideText, theme.muted, theme.panelAlt, () =>
+            onGapAction(key, "collapse"),
+          )
+        : null}
+      {gapZone(`${row.key}:down`, downText, railFg, theme.panelAlt, () =>
+        onGapAction(key, "expand-bottom"),
+      )}
+    </box>
+  );
+}
+
 /** Render collapsed and hunk-header rows, including the optional add-note target. */
 function renderHeaderRow(
   row: Extract<DiffRow, { type: "collapsed" | "hunk-header" }>,
@@ -1144,8 +1218,20 @@ function renderHeaderRow(
   showAddNoteBadge = false,
   onHoverRow?: (rowKey: string) => void,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
-  onToggleGap?: (gapKey: string) => void,
+  onGapAction?: (gapKey: string, action: GapAction) => void,
 ) {
+  if (row.type === "collapsed" && onGapAction) {
+    return renderExpandableCollapsedRow(
+      row,
+      width,
+      theme,
+      selected,
+      anchorId,
+      onHoverRow,
+      onGapAction,
+    );
+  }
+
   const badges = [
     showAddNoteBadge
       ? {
@@ -1156,14 +1242,8 @@ function renderHeaderRow(
       : null,
   ].filter((badge): badge is { key: string; text: string; onClick: () => void } => Boolean(badge));
   const badgeWidth = badges.reduce((total, badge) => total + badge.text.length + 1, 0);
-  const collapsedExpandable = row.type === "collapsed" && Boolean(onToggleGap);
-  const labelText =
-    row.type === "collapsed" ? collapsedRowLabel(row.text, collapsedExpandable) : row.text;
+  const labelText = row.type === "collapsed" ? collapsedRowLabel(row.text, false) : row.text;
   const label = fitText(labelText, Math.max(0, width - 1 - badgeWidth));
-  const handleCollapsedClick =
-    row.type === "collapsed" && onToggleGap
-      ? () => onToggleGap(gapKey(row.position, row.hunkIndex))
-      : undefined;
 
   if (badges.length === 0) {
     return (
@@ -1177,7 +1257,6 @@ function renderHeaderRow(
         }}
         onMouseMove={() => onHoverRow?.(row.key)}
         onMouseOver={() => onHoverRow?.(row.key)}
-        onMouseUp={handleCollapsedClick}
       >
         <text>
           <span
@@ -1210,10 +1289,7 @@ function renderHeaderRow(
       onMouseMove={() => onHoverRow?.(row.key)}
       onMouseOver={() => onHoverRow?.(row.key)}
     >
-      <box
-        style={{ width: Math.max(0, width - badgeWidth), height: 1 }}
-        onMouseUp={handleCollapsedClick}
-      >
+      <box style={{ width: Math.max(0, width - badgeWidth), height: 1 }}>
         <text>
           <span
             fg={selected ? neutralRailColor(theme) : dimRailColor(neutralRailColor(theme), theme)}
@@ -1362,7 +1438,7 @@ function renderRow(
   showAddNoteBadge = false,
   onHoverRow?: (rowKey: string) => void,
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void,
-  onToggleGap?: (gapKey: string) => void,
+  onGapAction?: (gapKey: string, action: GapAction) => void,
 ) {
   const hasCopySelection = !!copySelectedRowRange;
   const reserveAddNoteColumn = Boolean(onStartUserNoteAtHunk);
@@ -1384,7 +1460,7 @@ function renderRow(
       showAddNoteBadge,
       onHoverRow,
       onStartUserNoteAtHunk,
-      onToggleGap,
+      onGapAction,
     );
   } else if (row.type === "hunk-header") {
     baseRow = showHunkHeaders
@@ -1747,7 +1823,7 @@ interface DiffRowViewProps {
   showAddNoteBadge?: boolean;
   onHoverRow?: (rowKey: string) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
-  onToggleGap?: (gapKey: string) => void;
+  onGapAction?: (gapKey: string, action: GapAction) => void;
 }
 
 /**
@@ -1775,7 +1851,7 @@ export const DiffRowView = memo(
     showAddNoteBadge,
     onHoverRow,
     onStartUserNoteAtHunk,
-    onToggleGap,
+    onGapAction,
   }: DiffRowViewProps) {
     return renderRow(
       row,
@@ -1794,7 +1870,7 @@ export const DiffRowView = memo(
       showAddNoteBadge,
       onHoverRow,
       onStartUserNoteAtHunk,
-      onToggleGap,
+      onGapAction,
     );
   },
   (previous, next) => {
@@ -1815,7 +1891,7 @@ export const DiffRowView = memo(
       previous.showAddNoteBadge === next.showAddNoteBadge &&
       previous.onHoverRow === next.onHoverRow &&
       previous.onStartUserNoteAtHunk === next.onStartUserNoteAtHunk &&
-      previous.onToggleGap === next.onToggleGap
+      previous.onGapAction === next.onGapAction
     );
   },
 );

@@ -38,6 +38,14 @@ import type {
 } from "../../hunk-session/types";
 import type { FileSourceStatus } from "../diff/expandCollapsedRows";
 import { selectGapForKeyboardToggle } from "../diff/expandCollapsedRows";
+import {
+  COLLAPSED,
+  DEFAULT_EXPAND_STEP,
+  expandEdge,
+  type GapAction,
+  type GapEdge,
+  type GapExpansion,
+} from "../diff/gapExpansion";
 import { trailingCollapsedLines } from "../diff/pierre";
 import { findNextHunkCursor } from "../lib/hunks";
 import { reviewNoteSource } from "../lib/agentAnnotations";
@@ -125,9 +133,20 @@ export interface ReviewSelectionOptions {
   scrollToNote?: boolean;
 }
 
+/** Total unchanged lines a gap covers, resolved from its `${position}:${hunkIndex}` key. */
+function gapTotalLines(file: DiffFile, gapKey: string): number {
+  const separator = gapKey.indexOf(":");
+  const position = gapKey.slice(0, separator);
+  const hunkIndex = Number(gapKey.slice(separator + 1));
+  if (position === "trailing") {
+    return trailingCollapsedLines(file.metadata);
+  }
+  return file.metadata.hunks[hunkIndex]?.collapsedBefore ?? 0;
+}
+
 export interface ReviewController {
   allFiles: DiffFile[];
-  expandedGapsByFileId: Record<string, ReadonlySet<string>>;
+  gapExpansionsByFileId: Record<string, ReadonlyMap<string, GapExpansion>>;
   filter: string;
   draftNote: DraftReviewNote | null;
   liveCommentCount: number;
@@ -149,8 +168,8 @@ export interface ReviewController {
   selectedHunkIndex: number;
   sidebarEntries: ReviewState["sidebarEntries"];
   sourceStatusByFileId: Record<string, FileSourceStatus>;
-  toggleGap: (fileId: string, gapKey: string) => void;
-  toggleSelectedHunkGap: () => void;
+  applyGapAction: (fileId: string, gapKey: string, action: GapAction) => void;
+  expandSelectedHunkGap: (edge: GapEdge) => void;
   visibleFiles: DiffFile[];
   addLiveComment: (
     input: CommentToolInput,
@@ -184,7 +203,13 @@ export interface ReviewController {
 }
 
 /** Own the shared review stream state used by both the UI and session bridge. */
-export function useReviewController({ files }: { files: DiffFile[] }): ReviewController {
+export function useReviewController({
+  files,
+  expandStep = DEFAULT_EXPAND_STEP,
+}: {
+  files: DiffFile[];
+  expandStep?: number;
+}): ReviewController {
   const [filter, setFilter] = useState("");
   const [selectedFileId, setSelectedFileId] = useState(files[0]?.id ?? "");
   const [selectedHunkIndex, setSelectedHunkIndex] = useState(0);
@@ -196,8 +221,8 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   );
   const [userNotesByFileId, setUserNotesByFileId] = useState<Record<string, UserReviewNote[]>>({});
   const [draftNote, setDraftNote] = useState<DraftReviewNote | null>(null);
-  const [expandedGapsByFileId, setExpandedGapsByFileId] = useState<
-    Record<string, ReadonlySet<string>>
+  const [gapExpansionsByFileId, setGapExpansionsByFileId] = useState<
+    Record<string, ReadonlyMap<string, GapExpansion>>
   >({});
   const [sourceStatusByFileId, setSourceStatusByFileId] = useState<
     Record<string, FileSourceStatus>
@@ -235,7 +260,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
         sourceLoadRequestsRef.current.delete(fileId);
       }
       setSourceStatusByFileId((prev) => removeKeys(prev, staleFileIds));
-      setExpandedGapsByFileId((prev) => removeKeys(prev, staleFileIds));
+      setGapExpansionsByFileId((prev) => removeKeys(prev, staleFileIds));
     }
   }
 
@@ -422,24 +447,40 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     setFilter("");
   }, []);
 
-  /** Toggle expansion of one collapsed gap and lazily load source when needed. */
-  const toggleGap = useCallback(
-    (fileId: string, gapKey: string) => {
+  /**
+   * Apply a directional expand (or collapse) to one gap and lazily load source
+   * when an expand needs it. `expand-top`/`expand-bottom` reveal `expandStep`
+   * more lines from that edge (clamped to the gap); `collapse` resets to hidden.
+   */
+  const applyGapAction = useCallback(
+    (fileId: string, gapKey: string, action: GapAction) => {
       const file = allFiles.find((entry) => entry.id === fileId);
       if (!file?.sourceFetcher) {
         return;
       }
 
-      setExpandedGapsByFileId((prev) => {
+      const total = gapTotalLines(file, gapKey);
+      setGapExpansionsByFileId((prev) => {
         const current = prev[fileId];
-        const next = new Set(current ?? []);
-        if (next.has(gapKey)) {
+        const next = new Map(current ?? []);
+        if (action === "collapse") {
           next.delete(gapKey);
         } else {
-          next.add(gapKey);
+          const edge: GapEdge = action === "expand-top" ? "top" : "bottom";
+          const grown = expandEdge(next.get(gapKey) ?? COLLAPSED, edge, expandStep, total);
+          if (grown.top === 0 && grown.bottom === 0) {
+            next.delete(gapKey);
+          } else {
+            next.set(gapKey, grown);
+          }
         }
         return { ...prev, [fileId]: next };
       });
+
+      // Collapsing never needs source; only an expand triggers a fetch.
+      if (action === "collapse") {
+        return;
+      }
 
       // The fetcher caches its own resolved text; we mirror it into React state
       // as a tagged status so the UI can distinguish loading, loaded, and error
@@ -512,25 +553,28 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
           });
         });
     },
-    [allFiles],
+    [allFiles, expandStep],
   );
 
-  /** Toggle the collapsed gap nearest to the current hunk selection. */
-  const toggleSelectedHunkGap = useCallback(() => {
-    const file = selectedFile;
-    if (!file?.sourceFetcher) {
-      return;
-    }
+  /** Expand the collapsed gap nearest to the current hunk selection from one edge. */
+  const expandSelectedHunkGap = useCallback(
+    (edge: GapEdge) => {
+      const file = selectedFile;
+      if (!file?.sourceFetcher) {
+        return;
+      }
 
-    const target = selectGapForKeyboardToggle(
-      file.metadata.hunks,
-      selectedHunkIndex,
-      trailingCollapsedLines(file.metadata) > 0,
-    );
-    if (target) {
-      toggleGap(file.id, target);
-    }
-  }, [selectedFile, selectedHunkIndex, toggleGap]);
+      const target = selectGapForKeyboardToggle(
+        file.metadata.hunks,
+        selectedHunkIndex,
+        trailingCollapsedLines(file.metadata) > 0,
+      );
+      if (target) {
+        applyGapAction(file.id, target, edge === "top" ? "expand-top" : "expand-bottom");
+      }
+    },
+    [applyGapAction, selectedFile, selectedHunkIndex],
+  );
 
   /** Resolve one session-daemon navigation request against the current review state and select it. */
   const navigateToLocation = useCallback(
@@ -989,7 +1033,7 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
   return {
     allFiles,
     draftNote,
-    expandedGapsByFileId,
+    gapExpansionsByFileId,
     filter,
     liveCommentCount,
     liveCommentSummaries,
@@ -1006,8 +1050,8 @@ export function useReviewController({ files }: { files: DiffFile[] }): ReviewCon
     selectedHunkIndex,
     sidebarEntries,
     sourceStatusByFileId,
-    toggleGap,
-    toggleSelectedHunkGap,
+    applyGapAction,
+    expandSelectedHunkGap,
     visibleFiles,
     addLiveComment,
     addLiveCommentBatch,

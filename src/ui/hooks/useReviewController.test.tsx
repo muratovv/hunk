@@ -57,13 +57,23 @@ function createSingleHunkFile() {
   return createDiffFile("alpha", "alpha.ts", lines(...beforeLines), lines(...afterLines));
 }
 
-/** Build the small one-hunk alpha fixture used by source-loading tests. */
+/**
+ * Build the alpha fixture used by source-loading and expansion tests. The change
+ * sits mid-file so a real leading gap ("before:0") precedes hunk 0 and can be
+ * directionally expanded.
+ */
 function createAlphaFile(sourceFetcher?: DiffFile["sourceFetcher"]) {
+  const beforeLines = Array.from(
+    { length: 30 },
+    (_, index) => `export const line${index + 1} = ${index + 1};`,
+  );
+  const afterLines = [...beforeLines];
+  afterLines[19] = "export const line20 = 2000;";
   return createDiffFile(
     "alpha",
     "alpha.ts",
-    "export const alpha = 1;\n",
-    "export const alpha = 2;\n",
+    lines(...beforeLines),
+    lines(...afterLines),
     null,
     sourceFetcher,
   );
@@ -637,7 +647,7 @@ describe("useReviewController", () => {
     }
   });
 
-  test("toggleGap flips per-file expansion state and lazily loads source text", async () => {
+  test("applyGapAction expands per-file gap state, lazily loads source, and collapses back", async () => {
     const fakeFetcher = createTestSourceFetcher((side) =>
       side === "new" ? "alpha\nbeta\ngamma\n" : null,
     );
@@ -648,12 +658,12 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
-      const expanded = expectValue(controllerRef.current).expandedGapsByFileId["alpha"];
-      expect(expanded?.has("before:0")).toBe(true);
+      const expanded = expectValue(controllerRef.current).gapExpansionsByFileId["alpha"];
+      expect(expanded?.get("before:0")?.top).toBeGreaterThan(0);
       const status = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
       expect(status?.kind).toBe("loaded");
       if (status?.kind === "loaded") {
@@ -662,11 +672,11 @@ describe("useReviewController", () => {
       expect(fakeFetcher.calls.length).toBeGreaterThanOrEqual(1);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "collapse");
       });
       await flush(setup);
 
-      const reCollapsed = expectValue(controllerRef.current).expandedGapsByFileId["alpha"];
+      const reCollapsed = expectValue(controllerRef.current).gapExpansionsByFileId["alpha"];
       expect(reCollapsed?.has("before:0")).toBe(false);
     } finally {
       await act(async () => {
@@ -675,7 +685,7 @@ describe("useReviewController", () => {
     }
   });
 
-  test("toggleGap settles source status under React StrictMode", async () => {
+  test("applyGapAction settles source status under React StrictMode", async () => {
     const deferred = createTestDeferred<string | null>();
     const fakeFetcher = createTestSourceFetcher(() => deferred.promise);
 
@@ -687,7 +697,7 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
@@ -710,18 +720,18 @@ describe("useReviewController", () => {
     }
   });
 
-  test("toggleGap is a no-op for files without a source fetcher", async () => {
+  test("applyGapAction is a no-op for files without a source fetcher", async () => {
     const { controllerRef, setup } = await renderReviewController([createAlphaFile()]);
 
     try {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
-      expect(expectValue(controllerRef.current).expandedGapsByFileId["alpha"]).toBeUndefined();
+      expect(expectValue(controllerRef.current).gapExpansionsByFileId["alpha"]).toBeUndefined();
       expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
     } finally {
       await act(async () => {
@@ -730,7 +740,7 @@ describe("useReviewController", () => {
     }
   });
 
-  test("toggleSelectedHunkGap expands the nearest gap for the current selection", async () => {
+  test("expandSelectedHunkGap expands the nearest gap for the current selection", async () => {
     const beforeLines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
     const afterLines = [...beforeLines];
     afterLines[4] = "line 5 changed";
@@ -751,12 +761,12 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleSelectedHunkGap();
+        expectValue(controllerRef.current).expandSelectedHunkGap("top");
       });
       await flush(setup);
 
-      const expanded = expectValue(controllerRef.current).expandedGapsByFileId["alpha"];
-      expect(expanded?.has("before:0")).toBe(true);
+      const expanded = expectValue(controllerRef.current).gapExpansionsByFileId["alpha"];
+      expect(expanded?.get("before:0")?.top).toBeGreaterThan(0);
       expect(sourceFetcher.calls).toEqual(["new"]);
     } finally {
       await act(async () => {
@@ -765,7 +775,7 @@ describe("useReviewController", () => {
     }
   });
 
-  test("toggleGap surfaces an error status when the fetcher resolves null", async () => {
+  test("applyGapAction surfaces an error status when the fetcher resolves null", async () => {
     const failingFetcher = createTestSourceFetcher(() => null);
 
     const { controllerRef, setup } = await renderReviewController([
@@ -776,7 +786,7 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
@@ -789,7 +799,7 @@ describe("useReviewController", () => {
     }
   });
 
-  test("toggleGap surfaces an error status and logs context when the fetcher rejects", async () => {
+  test("applyGapAction surfaces an error status and logs context when the fetcher rejects", async () => {
     const originalConsoleError = console.error;
     const loggedErrors: unknown[][] = [];
     console.error = (...args: unknown[]) => {
@@ -808,7 +818,7 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
@@ -824,7 +834,7 @@ describe("useReviewController", () => {
     }
   });
 
-  test("toggleGap marks over-limit source loads as too large", async () => {
+  test("applyGapAction marks over-limit source loads as too large", async () => {
     const tooLargeFetcher = createTestSourceFetcher(() => {
       throw new SourceTextTooLargeError(5);
     });
@@ -837,7 +847,7 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
@@ -850,7 +860,7 @@ describe("useReviewController", () => {
     }
   });
 
-  test("toggleGap caches loaded text and does not re-fetch on the second open", async () => {
+  test("applyGapAction caches loaded text and does not re-fetch on the second open", async () => {
     let readCount = 0;
     const trackedFetcher = createTestSourceFetcher((side) => {
       readCount += 1;
@@ -865,18 +875,18 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
       const callsAfterFirst = trackedFetcher.calls.length;
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
@@ -894,7 +904,7 @@ describe("useReviewController", () => {
     }
   });
 
-  test("toggleGap requests old-side source for deleted files", async () => {
+  test("applyGapAction requests old-side source for deleted files", async () => {
     const trackedFetcher = createTestSourceFetcher((side) => (side === "old" ? "removed\n" : null));
 
     const { controllerRef, setup } = await renderReviewController([
@@ -905,7 +915,7 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("removed", "trailing:0");
+        expectValue(controllerRef.current).applyGapAction("removed", "trailing:0", "expand-top");
       });
       await flush(setup);
 
@@ -935,7 +945,7 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
@@ -946,7 +956,7 @@ describe("useReviewController", () => {
         expect(initialStatus.text).toBe("first\n");
       }
       expect(
-        expectValue(controllerRef.current).expandedGapsByFileId["alpha"]?.has("before:0"),
+        expectValue(controllerRef.current).gapExpansionsByFileId["alpha"]?.has("before:0"),
       ).toBe(true);
 
       // Simulate a soft reload: same file id, different sourceFetcher (and patch).
@@ -958,11 +968,11 @@ describe("useReviewController", () => {
       // The stale loaded text and stale expansion must be cleared so the
       // renderer doesn't combine old source with the new patch.
       expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
-      expect(expectValue(controllerRef.current).expandedGapsByFileId["alpha"]).toBeUndefined();
+      expect(expectValue(controllerRef.current).gapExpansionsByFileId["alpha"]).toBeUndefined();
 
       // Toggling again now fetches via the new fetcher and reports its text.
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
@@ -993,7 +1003,7 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
@@ -1007,7 +1017,7 @@ describe("useReviewController", () => {
       await flush(setup);
 
       expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
-      expect(expectValue(controllerRef.current).expandedGapsByFileId["alpha"]).toBeUndefined();
+      expect(expectValue(controllerRef.current).gapExpansionsByFileId["alpha"]).toBeUndefined();
 
       await act(async () => {
         firstLoad.resolve("first\n");
@@ -1018,7 +1028,7 @@ describe("useReviewController", () => {
       expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
@@ -1056,7 +1066,7 @@ describe("useReviewController", () => {
       await flush(setup);
 
       await act(async () => {
-        expectValue(controllerRef.current).toggleGap("alpha", "before:0");
+        expectValue(controllerRef.current).applyGapAction("alpha", "before:0", "expand-top");
       });
       await flush(setup);
 
