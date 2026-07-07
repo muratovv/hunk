@@ -27,6 +27,7 @@ import { buildAppMenus } from "./lib/appMenus";
 import { fileRowId } from "./lib/ids";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
 import { resolveResponsiveLayout } from "./lib/responsive";
+import { resolveEditTargetNote } from "./lib/reviewNotes";
 import { resizeSidebarWidth } from "./lib/sidebar";
 import { availableThemes, resolveTheme, withTransparentSurfaces } from "./themes";
 
@@ -729,6 +730,33 @@ export function App({
     [review.startEditUserNote],
   );
 
+  /**
+   * Keyboard edit (Shift+E): resolve which user note on the selected hunk to edit
+   * via the named policy — nearest the hovered add-note line, else the first note.
+   */
+  const startEditSelectedNote = useCallback(() => {
+    const fileId = selectedFile?.id;
+    if (!fileId) {
+      return;
+    }
+    const reference =
+      activeAddNoteTarget?.fileId === fileId ? activeAddNoteTarget.target : undefined;
+    const target = resolveEditTargetNote(
+      review.userNotesByFileId[fileId] ?? [],
+      selectedHunkIndex,
+      reference,
+    );
+    if (target) {
+      startEditUserNote(fileId, target.id);
+    }
+  }, [
+    activeAddNoteTarget,
+    review.userNotesByFileId,
+    selectedFile?.id,
+    selectedHunkIndex,
+    startEditUserNote,
+  ]);
+
   /** Mark the inline draft note textarea as the active keyboard input. */
   const focusDraftNote = useCallback(() => {
     setFocusArea("note");
@@ -861,6 +889,7 @@ export function App({
     showAgentSkill,
     showHelp,
     startUserNote: () => startUserNote(),
+    startEditSelectedNote,
     switchMenu,
     themeSelectorOpen: themeSelectorState.open,
     toggleAgentNotes,
