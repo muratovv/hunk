@@ -1189,7 +1189,12 @@ function renderExpandableCollapsedRow(
       {gapZone(`${row.key}:up`, upText, railFg, theme.panelAlt, () =>
         onGapAction(key, "expand-top"),
       )}
-      <box style={{ width: Math.max(0, measureTextWidth(label)), height: 1 }}>
+      {/* The label is the largest target, so it stays live: clicking it expands
+          from the top edge (same as ▲ / z) rather than being a dead zone. */}
+      <box
+        style={{ width: Math.max(0, measureTextWidth(label)), height: 1 }}
+        onMouseUp={() => onGapAction(key, "expand-top")}
+      >
         <text>
           <span fg={theme.muted} bg={theme.panelAlt}>
             {label}
