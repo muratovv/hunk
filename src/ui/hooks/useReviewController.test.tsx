@@ -567,6 +567,61 @@ describe("useReviewController", () => {
     }
   });
 
+  test("startEditUserNote seeds the draft from an existing user note", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[
+          createDiffFile(
+            "alpha",
+            "alpha.ts",
+            "export const alpha = 1;\n",
+            "export const alpha = 2;\n",
+          ),
+        ]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote();
+        expectValue(controllerRef.current).updateDraftNote("Original body.");
+      });
+      await flush(setup);
+
+      let savedNoteId = "";
+      await act(async () => {
+        savedNoteId = expectValue(controllerRef.current).saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).draftNote).toBeNull();
+
+      await act(async () => {
+        expectValue(controllerRef.current).startEditUserNote("alpha", savedNoteId);
+      });
+      await flush(setup);
+
+      const draft = expectValue(controllerRef.current).draftNote;
+      expect(draft).toMatchObject({
+        editingId: savedNoteId,
+        fileId: "alpha",
+        body: "Original body.",
+      });
+      expect(draft?.id).toStartWith("draft:edit:");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("session clear can include human user notes", async () => {
     const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
 

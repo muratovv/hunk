@@ -112,6 +112,8 @@ export interface UserReviewNote extends AgentAnnotation {
 
 export interface DraftReviewNote {
   id: string;
+  /** Set when editing an existing user note in place; save replaces the note with this id. */
+  editingId?: string;
   fileId: string;
   filePath: string;
   hunkIndex: number;
@@ -199,6 +201,7 @@ export interface ReviewController {
     hunkIndex?: number,
     target?: UserNoteLineTarget,
   ) => DraftReviewNote | null;
+  startEditUserNote: (fileId: string, noteId: string) => DraftReviewNote | null;
   setFilter: (value: string) => void;
   updateDraftNote: (body: string) => void;
 }
@@ -904,6 +907,38 @@ export function useReviewController({
     [allFiles, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
 
+  /**
+   * Re-open the draft composer seeded from an existing user note (body, anchor,
+   * ranges, and its id via `editingId`) so `saveDraftNote` can replace it in place
+   * instead of appending a new note. Returns null if the note no longer exists.
+   */
+  const startEditUserNote = useCallback(
+    (fileId: string, noteId: string): DraftReviewNote | null => {
+      const file = allFiles.find((candidate) => candidate.id === fileId);
+      const note = userNotesByFileId[fileId]?.find((candidate) => candidate.id === noteId);
+      if (!file || !note) {
+        return null;
+      }
+
+      const draft: DraftReviewNote = {
+        id: `draft:edit:${note.id}`,
+        editingId: note.id,
+        fileId: file.id,
+        filePath: file.path,
+        hunkIndex: note.hunkIndex,
+        side: note.side,
+        line: note.line,
+        oldRange: note.oldRange,
+        newRange: note.newRange,
+        body: note.summary,
+      };
+      setDraftNote(draft);
+      selectHunk(file.id, note.hunkIndex, { preserveViewport: true });
+      return draft;
+    },
+    [allFiles, selectHunk, userNotesByFileId],
+  );
+
   /** Update the body of the active draft note. */
   const updateDraftNote = useCallback((body: string) => {
     setDraftNote((current) => (current ? { ...current, body } : current));
@@ -1098,6 +1133,7 @@ export function useReviewController({
     selectFile,
     selectHunk,
     startUserNote,
+    startEditUserNote,
     setFilter,
     updateDraftNote,
   };
