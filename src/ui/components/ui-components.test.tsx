@@ -1254,7 +1254,9 @@ describe("UI components", () => {
       await settleDiffPane(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).toContain("Hide 25 unchanged lines");
+      // The trailing gap is fully expanded (no residual separator), so its lines
+      // render inline while the leading gap stays collapsed.
+      expect(frame).toContain("4 unchanged lines");
       expect(frame).toContain("first line 6");
       expect(frame).not.toContain("second-after-expanded.ts");
 
