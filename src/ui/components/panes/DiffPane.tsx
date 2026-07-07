@@ -429,9 +429,7 @@ export function DiffPane({
           source,
           editable: true,
           onRemove: annotation.id ? () => onRemoveUserNote?.(annotation.id!) : undefined,
-          onEdit: annotation.id
-            ? () => onStartEditUserNote?.(file.id, annotation.id!)
-            : undefined,
+          onEdit: annotation.id ? () => onStartEditUserNote?.(file.id, annotation.id!) : undefined,
         };
       });
 

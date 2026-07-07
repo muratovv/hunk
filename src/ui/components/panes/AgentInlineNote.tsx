@@ -273,10 +273,7 @@ export function AgentInlineNote({
         }))
       : []),
   ];
-  const savedTitleText = fitText(
-    ` ${titleText} `,
-    Math.max(0, boxWidth - 4 - headerControlsWidth),
-  );
+  const savedTitleText = fitText(` ${titleText} `, Math.max(0, boxWidth - 4 - headerControlsWidth));
   const savedTopBorderSuffixWidth = Math.max(
     0,
     boxWidth - 3 - savedTitleText.length - headerControlsWidth,
