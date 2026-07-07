@@ -362,6 +362,7 @@ export function PierreDiffView({
                 noteCount={plannedRow.noteCount}
                 noteIndex={plannedRow.noteIndex}
                 onClose={plannedRow.note.onRemove}
+                onEdit={plannedRow.note.onEdit}
                 theme={theme}
                 width={width}
               />

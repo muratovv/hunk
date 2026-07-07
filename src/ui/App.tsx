@@ -717,6 +717,18 @@ export function App({
     [activeAddNoteTarget, review.startUserNote],
   );
 
+  /** Re-open an existing user note in the draft composer and focus it for editing. */
+  const startEditUserNote = useCallback(
+    (fileId: string, noteId: string) => {
+      const draft = review.startEditUserNote(fileId, noteId);
+      if (draft) {
+        setActiveAddNoteTarget(null);
+        setFocusArea("note");
+      }
+    },
+    [review.startEditUserNote],
+  );
+
   /** Mark the inline draft note textarea as the active keyboard input. */
   const focusDraftNote = useCallback(() => {
     setFocusArea("note");
@@ -1039,6 +1051,7 @@ export function App({
           width={diffPaneWidth}
           onActiveAddNoteAffordanceChange={setActiveAddNoteTarget}
           onRemoveUserNote={review.removeUserNote}
+          onStartEditUserNote={startEditUserNote}
           onSaveDraftNote={saveDraftNote}
           onStartUserNoteAtHunk={startUserNote}
           onUpdateDraftNote={review.updateDraftNote}

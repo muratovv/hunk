@@ -208,6 +208,7 @@ export function DiffPane({
   cancelCopySelectionRef,
   onActiveAddNoteAffordanceChange,
   onRemoveUserNote,
+  onStartEditUserNote,
   onSaveDraftNote,
   onStartUserNoteAtHunk,
   onUpdateDraftNote,
@@ -257,6 +258,7 @@ export function DiffPane({
     affordance: (ActiveAddNoteAffordance & { fileId: string }) | null,
   ) => void;
   onRemoveUserNote?: (noteId: string) => void;
+  onStartEditUserNote?: (fileId: string, noteId: string) => void;
   onSaveDraftNote?: () => void;
   onStartUserNoteAtHunk?: (fileId: string, hunkIndex: number, target?: UserNoteLineTarget) => void;
   onUpdateDraftNote?: (body: string) => void;
@@ -427,6 +429,9 @@ export function DiffPane({
           source,
           editable: true,
           onRemove: annotation.id ? () => onRemoveUserNote?.(annotation.id!) : undefined,
+          onEdit: annotation.id
+            ? () => onStartEditUserNote?.(file.id, annotation.id!)
+            : undefined,
         };
       });
 
@@ -447,6 +452,7 @@ export function DiffPane({
           draft: {
             body: draftNote.body,
             focused: draftNoteFocused,
+            caretAtEnd: Boolean(draftNote.editingId),
             onBlur: onBlurDraftNote,
             onCancel: onCancelDraftNote ?? (() => {}),
             onFocus: onFocusDraftNote,
@@ -470,6 +476,7 @@ export function DiffPane({
     onCancelDraftNote,
     onFocusDraftNote,
     onRemoveUserNote,
+    onStartEditUserNote,
     onSaveDraftNote,
     onUpdateDraftNote,
     showAgentNotes,
