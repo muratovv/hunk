@@ -252,6 +252,9 @@ export function useReviewController({
     [userNotesSidecarPath],
   );
   const [draftNote, setDraftNote] = useState<DraftReviewNote | null>(null);
+  // Monotonic suffix so two notes saved in the same millisecond get distinct ids;
+  // remove/edit-by-id both depend on user-note ids being unique.
+  const nextUserNoteSeqRef = useRef(0);
   const [gapExpansionsByFileId, setGapExpansionsByFileId] = useState<
     Record<string, ReadonlyMap<string, GapExpansion>>
   >({});
@@ -961,9 +964,9 @@ export function useReviewController({
       return null;
     }
 
-    const savedNote: UserReviewNote = {
-      id: `user:${Date.now()}`,
-      source: "user",
+    const now = new Date().toISOString();
+    const base = {
+      source: "user" as const,
       filePath: draftNote.filePath,
       hunkIndex: draftNote.hunkIndex,
       side: draftNote.side,
@@ -972,8 +975,38 @@ export function useReviewController({
       newRange: draftNote.newRange,
       summary: body,
       author: "user",
-      createdAt: new Date().toISOString(),
-      editable: true,
+      editable: true as const,
+    };
+
+    const editingId = draftNote.editingId;
+    if (editingId) {
+      // Edit in place: keep the note's id and original createdAt, stamp updatedAt,
+      // and replace it by id so its position in the file's note list stays put.
+      const existing = (userNotesByFileId[draftNote.fileId] ?? []).find(
+        (note) => note.id === editingId,
+      );
+      const savedNote: UserReviewNote = {
+        ...base,
+        id: editingId,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      // Functional form: a closure snapshot would drop a save batched before re-render.
+      commitUserNotes((prev) => {
+        const fileNotes = prev[draftNote.fileId] ?? [];
+        const replaced = fileNotes.some((note) => note.id === editingId)
+          ? fileNotes.map((note) => (note.id === editingId ? savedNote : note))
+          : [...fileNotes, savedNote];
+        return { ...prev, [draftNote.fileId]: replaced };
+      });
+      setDraftNote(null);
+      return savedNote;
+    }
+
+    const savedNote: UserReviewNote = {
+      ...base,
+      id: `user:${Date.now()}:${nextUserNoteSeqRef.current++}`,
+      createdAt: now,
     };
 
     // Functional form: a closure snapshot would drop a save batched before re-render.
@@ -983,7 +1016,7 @@ export function useReviewController({
     }));
     setDraftNote(null);
     return savedNote;
-  }, [draftNote, commitUserNotes]);
+  }, [draftNote, commitUserNotes, userNotesByFileId]);
 
   /** Remove one in-memory user note by id. */
   const removeUserNote = useCallback(
