@@ -56,6 +56,7 @@ export function HelpDialog({
       items: [
         ["/", "focus file filter"],
         ["c", "create review note"],
+        ["Shift+e", "edit review note"],
         ["Tab", "toggle files/filter focus"],
         ["F10", "open menus"],
         [canRefresh ? "r / q" : "q", canRefresh ? "reload / quit" : "quit"],

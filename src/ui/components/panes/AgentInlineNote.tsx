@@ -124,6 +124,7 @@ export function AgentInlineNote({
   noteIndex = 0,
   draft,
   onClose,
+  onEdit,
   theme,
   width,
 }: {
@@ -136,6 +137,7 @@ export function AgentInlineNote({
   draft?: {
     body: string;
     focused: boolean;
+    caretAtEnd?: boolean;
     onBlur?: () => void;
     onCancel: () => void;
     onFocus?: () => void;
@@ -143,6 +145,7 @@ export function AgentInlineNote({
     onSave: () => void;
   };
   onClose?: () => void;
+  onEdit?: () => void;
   theme: AppTheme;
   width: number;
 }) {
@@ -190,7 +193,18 @@ export function AgentInlineNote({
     };
   }, [draft]);
 
+  // Edit-open seeds the composer with the note's existing body; put the caret at
+  // the end so the user keeps typing there instead of before the text. caretAtEnd
+  // is constant per composer instance, so this runs once on mount.
+  useLayoutEffect(() => {
+    if (!draft?.caretAtEnd) {
+      return;
+    }
+    textareaRef.current?.gotoBufferEnd();
+  }, [draft?.caretAtEnd]);
+
   const closeText = onClose ? "[x]" : "";
+  const editText = onEdit ? "[e]" : "";
   const titleText = `${inlineNoteTitle(annotation, noteIndex, noteCount)} - ${annotationRangeLabel(annotation, file)}`;
   const splitWidths = splitColumnWidths(width);
   const canDockRight = layout === "split" && anchorSide === "new" && width >= 84;
@@ -209,6 +223,9 @@ export function AgentInlineNote({
   const innerWidth = Math.max(1, boxWidth - 2);
   const closeGapWidth = closeText ? 1 : 0;
   const closeWidth = closeText.length;
+  const editGapWidth = editText ? 1 : 0;
+  const editWidth = editText.length;
+  const headerControlsWidth = editGapWidth + editWidth + closeGapWidth + closeWidth;
   const bodyWidth = innerWidth;
   const contentWidth = Math.max(1, bodyWidth - 2);
   const draftInnerWidth = Math.max(1, boxWidth - 2);
@@ -256,13 +273,10 @@ export function AgentInlineNote({
         }))
       : []),
   ];
-  const savedTitleText = fitText(
-    ` ${titleText} `,
-    Math.max(0, boxWidth - 4 - closeGapWidth - closeWidth),
-  );
+  const savedTitleText = fitText(` ${titleText} `, Math.max(0, boxWidth - 4 - headerControlsWidth));
   const savedTopBorderSuffixWidth = Math.max(
     0,
-    boxWidth - 3 - savedTitleText.length - closeGapWidth - closeWidth,
+    boxWidth - 3 - savedTitleText.length - headerControlsWidth,
   );
   const savedTopPrefixWidth = 2 + savedTitleText.length + savedTopBorderSuffixWidth;
   const bottomBorder = `╰${"─".repeat(Math.max(0, boxWidth - 2))}╯`;
@@ -542,6 +556,21 @@ export function AgentInlineNote({
             </span>
           </text>
         </box>
+        {editText ? (
+          <box style={{ width: editGapWidth, height: 1, backgroundColor: theme.panel }}>
+            <text bg={theme.panel}>{" ".repeat(editGapWidth)}</text>
+          </box>
+        ) : null}
+        {editText ? (
+          <box
+            onMouseUp={onEdit}
+            style={{ width: editWidth, height: 1, backgroundColor: theme.panel }}
+          >
+            <text fg={theme.noteTitleText} bg={theme.panel}>
+              {editText}
+            </text>
+          </box>
+        ) : null}
         {closeText ? (
           <box style={{ width: closeGapWidth, height: 1, backgroundColor: theme.panel }}>
             <text bg={theme.panel}>{" ".repeat(closeGapWidth)}</text>

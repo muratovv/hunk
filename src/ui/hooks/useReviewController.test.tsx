@@ -567,6 +567,139 @@ describe("useReviewController", () => {
     }
   });
 
+  test("startEditUserNote seeds the draft from an existing user note", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[
+          createDiffFile(
+            "alpha",
+            "alpha.ts",
+            "export const alpha = 1;\n",
+            "export const alpha = 2;\n",
+          ),
+        ]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote();
+        expectValue(controllerRef.current).updateDraftNote("Original body.");
+      });
+      await flush(setup);
+
+      let savedNoteId = "";
+      await act(async () => {
+        savedNoteId = expectValue(controllerRef.current).saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).draftNote).toBeNull();
+
+      await act(async () => {
+        expectValue(controllerRef.current).startEditUserNote("alpha", savedNoteId);
+      });
+      await flush(setup);
+
+      const draft = expectValue(controllerRef.current).draftNote;
+      expect(draft).toMatchObject({
+        editingId: savedNoteId,
+        fileId: "alpha",
+        body: "Original body.",
+      });
+      expect(draft?.id).toStartWith("draft:edit:");
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("saving an edited draft replaces the note in place, preserving order and id", async () => {
+    const controllerRef: { current: ReviewController | null } = { current: null };
+    const setup = await testRender(
+      <ReviewControllerHarness
+        initialFiles={[
+          createDiffFile(
+            "alpha",
+            "alpha.ts",
+            "export const alpha = 1;\n",
+            "export const alpha = 2;\n",
+          ),
+        ]}
+        onController={(nextController) => {
+          controllerRef.current = nextController;
+        }}
+      />,
+      { width: 80, height: 4 },
+    );
+
+    try {
+      await flush(setup);
+
+      // Two notes on the same file so ordering can be checked after an edit.
+      let firstId = "";
+      let firstCreatedAt = "";
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote();
+        expectValue(controllerRef.current).updateDraftNote("First body.");
+      });
+      await flush(setup);
+      await act(async () => {
+        const saved = expectValue(controllerRef.current).saveDraftNote();
+        firstId = saved?.id ?? "";
+        firstCreatedAt = saved?.createdAt ?? "";
+      });
+      await flush(setup);
+
+      await act(async () => {
+        expectValue(controllerRef.current).startUserNote();
+        expectValue(controllerRef.current).updateDraftNote("Second body.");
+      });
+      await flush(setup);
+      await act(async () => {
+        expectValue(controllerRef.current).saveDraftNote();
+      });
+      await flush(setup);
+
+      expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(2);
+
+      // Edit the FIRST note.
+      let editedId = "";
+      await act(async () => {
+        expectValue(controllerRef.current).startEditUserNote("alpha", firstId);
+        expectValue(controllerRef.current).updateDraftNote("First body, edited.");
+      });
+      await flush(setup);
+      await act(async () => {
+        editedId = expectValue(controllerRef.current).saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+
+      const notes = expectValue(controllerRef.current).userNotesByFileId.alpha;
+      expect(notes).toHaveLength(2); // replaced, not appended
+      expect(editedId).toBe(firstId); // id preserved
+      expect(notes?.[0]).toMatchObject({
+        id: firstId,
+        summary: "First body, edited.",
+        createdAt: firstCreatedAt, // original creation time kept
+      });
+      expect(notes?.[0]?.updatedAt).toBeString(); // edit stamps updatedAt
+      expect(notes?.[1]).toMatchObject({ summary: "Second body." }); // untouched, still last
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
   test("session clear can include human user notes", async () => {
     const { controllerRef, setup } = await renderReviewController([createTwoHunkFile()]);
 

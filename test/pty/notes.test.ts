@@ -482,4 +482,68 @@ describe("PTY notes", () => {
       session.close();
     }
   });
+
+  test("clicking the [e] affordance edits a saved user note in place", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Original note body");
+      await session.press(["ctrl", "s"]);
+      await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      // Reopen through the [e] affordance on the saved card.
+      await session.click(/\[e\]/);
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      // Caret is seeded at the end, so typed text appends rather than prepends.
+      await session.type(" EDITED");
+      await session.press(["ctrl", "s"]);
+
+      const saved = await session.waitForText(/Original note body EDITED/, { timeout: 5_000 });
+      expect(saved).toContain("Original note body EDITED");
+      // Replaced in place, not appended — a duplicate would show "Your note 1/2".
+      expect(saved).not.toMatch(/Your note\s+\d+\/\d+/);
+    } finally {
+      session.close();
+    }
+  });
+
+  test("Shift+E edits the user note on the selected hunk", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Note via keyboard");
+      await session.press(["ctrl", "s"]);
+      await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      // Shift+E reaches the app shortcut as an uppercase "E".
+      await session.type("E");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type(" tweaked");
+      await session.press(["ctrl", "s"]);
+
+      const saved = await session.waitForText(/Note via keyboard tweaked/, { timeout: 5_000 });
+      expect(saved).toContain("Note via keyboard tweaked");
+      expect(saved).not.toMatch(/Your note\s+\d+\/\d+/);
+    } finally {
+      session.close();
+    }
+  });
 });

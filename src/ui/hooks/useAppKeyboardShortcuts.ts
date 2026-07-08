@@ -59,6 +59,14 @@ function isUppercaseZKey(key: KeyEvent) {
   );
 }
 
+/** Detect Shift-E (edit the selected user note) without stealing the lowercase edit-file key. */
+function isUppercaseEKey(key: KeyEvent) {
+  return (
+    (key.sequence === "E" && !key.option && !key.ctrl && !key.meta) ||
+    (key.name === "e" && key.shift && !key.option && !key.ctrl && !key.meta)
+  );
+}
+
 export interface UseAppKeyboardShortcutsOptions {
   activeMenuId: MenuId | null;
   activateCurrentMenuItem: () => void;
@@ -87,6 +95,7 @@ export interface UseAppKeyboardShortcutsOptions {
   showAgentSkill: boolean;
   showHelp: boolean;
   startUserNote: () => void;
+  startEditSelectedNote: () => void;
   switchMenu: (delta: number) => void;
   toggleAgentNotes: () => void;
   toggleFocusArea: () => void;
@@ -131,6 +140,7 @@ export function useAppKeyboardShortcuts({
   showAgentSkill,
   showHelp,
   startUserNote,
+  startEditSelectedNote,
   switchMenu,
   toggleAgentNotes,
   toggleFocusArea,
@@ -554,7 +564,12 @@ export function useAppKeyboardShortcuts({
       return;
     }
 
-    if (key.name === "e" || key.sequence === "e") {
+    if (isUppercaseEKey(key)) {
+      runAndCloseMenu(startEditSelectedNote);
+      return;
+    }
+
+    if ((key.name === "e" || key.sequence === "e") && !key.shift) {
       runAndCloseMenu(triggerEditSelectedFile);
       return;
     }

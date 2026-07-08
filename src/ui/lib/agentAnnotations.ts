@@ -11,6 +11,7 @@ export interface VisibleAgentNote {
   draft?: {
     body: string;
     focused: boolean;
+    caretAtEnd?: boolean;
     onBlur?: () => void;
     onCancel: () => void;
     onFocus?: () => void;
@@ -18,6 +19,7 @@ export interface VisibleAgentNote {
     onSave: () => void;
   };
   onRemove?: () => void;
+  onEdit?: () => void;
 }
 
 export interface AnnotationAnchor {

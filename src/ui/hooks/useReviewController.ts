@@ -112,6 +112,8 @@ export interface UserReviewNote extends AgentAnnotation {
 
 export interface DraftReviewNote {
   id: string;
+  /** Set when editing an existing user note in place; save replaces the note with this id. */
+  editingId?: string;
   fileId: string;
   filePath: string;
   hunkIndex: number;
@@ -199,6 +201,7 @@ export interface ReviewController {
     hunkIndex?: number,
     target?: UserNoteLineTarget,
   ) => DraftReviewNote | null;
+  startEditUserNote: (fileId: string, noteId: string) => DraftReviewNote | null;
   setFilter: (value: string) => void;
   updateDraftNote: (body: string) => void;
 }
@@ -249,6 +252,9 @@ export function useReviewController({
     [userNotesSidecarPath],
   );
   const [draftNote, setDraftNote] = useState<DraftReviewNote | null>(null);
+  // Monotonic suffix so two notes saved in the same millisecond get distinct ids;
+  // remove/edit-by-id both depend on user-note ids being unique.
+  const nextUserNoteSeqRef = useRef(0);
   const [gapExpansionsByFileId, setGapExpansionsByFileId] = useState<
     Record<string, ReadonlyMap<string, GapExpansion>>
   >({});
@@ -904,6 +910,38 @@ export function useReviewController({
     [allFiles, selectHunk, selectedFile?.id, selectedHunkIndex],
   );
 
+  /**
+   * Re-open the draft composer seeded from an existing user note (body, anchor,
+   * ranges, and its id via `editingId`) so `saveDraftNote` can replace it in place
+   * instead of appending a new note. Returns null if the note no longer exists.
+   */
+  const startEditUserNote = useCallback(
+    (fileId: string, noteId: string): DraftReviewNote | null => {
+      const file = allFiles.find((candidate) => candidate.id === fileId);
+      const note = userNotesByFileId[fileId]?.find((candidate) => candidate.id === noteId);
+      if (!file || !note) {
+        return null;
+      }
+
+      const draft: DraftReviewNote = {
+        id: `draft:edit:${note.id}`,
+        editingId: note.id,
+        fileId: file.id,
+        filePath: file.path,
+        hunkIndex: note.hunkIndex,
+        side: note.side,
+        line: note.line,
+        oldRange: note.oldRange,
+        newRange: note.newRange,
+        body: note.summary,
+      };
+      setDraftNote(draft);
+      selectHunk(file.id, note.hunkIndex, { preserveViewport: true });
+      return draft;
+    },
+    [allFiles, selectHunk, userNotesByFileId],
+  );
+
   /** Update the body of the active draft note. */
   const updateDraftNote = useCallback((body: string) => {
     setDraftNote((current) => (current ? { ...current, body } : current));
@@ -926,9 +964,9 @@ export function useReviewController({
       return null;
     }
 
-    const savedNote: UserReviewNote = {
-      id: `user:${Date.now()}`,
-      source: "user",
+    const now = new Date().toISOString();
+    const base = {
+      source: "user" as const,
       filePath: draftNote.filePath,
       hunkIndex: draftNote.hunkIndex,
       side: draftNote.side,
@@ -937,8 +975,38 @@ export function useReviewController({
       newRange: draftNote.newRange,
       summary: body,
       author: "user",
-      createdAt: new Date().toISOString(),
-      editable: true,
+      editable: true as const,
+    };
+
+    const editingId = draftNote.editingId;
+    if (editingId) {
+      // Edit in place: keep the note's id and original createdAt, stamp updatedAt,
+      // and replace it by id so its position in the file's note list stays put.
+      const existing = (userNotesByFileId[draftNote.fileId] ?? []).find(
+        (note) => note.id === editingId,
+      );
+      const savedNote: UserReviewNote = {
+        ...base,
+        id: editingId,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      // Functional form: a closure snapshot would drop a save batched before re-render.
+      commitUserNotes((prev) => {
+        const fileNotes = prev[draftNote.fileId] ?? [];
+        const replaced = fileNotes.some((note) => note.id === editingId)
+          ? fileNotes.map((note) => (note.id === editingId ? savedNote : note))
+          : [...fileNotes, savedNote];
+        return { ...prev, [draftNote.fileId]: replaced };
+      });
+      setDraftNote(null);
+      return savedNote;
+    }
+
+    const savedNote: UserReviewNote = {
+      ...base,
+      id: `user:${Date.now()}:${nextUserNoteSeqRef.current++}`,
+      createdAt: now,
     };
 
     // Functional form: a closure snapshot would drop a save batched before re-render.
@@ -948,7 +1016,7 @@ export function useReviewController({
     }));
     setDraftNote(null);
     return savedNote;
-  }, [draftNote, commitUserNotes]);
+  }, [draftNote, commitUserNotes, userNotesByFileId]);
 
   /** Remove one in-memory user note by id. */
   const removeUserNote = useCallback(
@@ -1098,6 +1166,7 @@ export function useReviewController({
     selectFile,
     selectHunk,
     startUserNote,
+    startEditUserNote,
     setFilter,
     updateDraftNote,
   };

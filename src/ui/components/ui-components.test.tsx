@@ -2341,13 +2341,13 @@ describe("UI components", () => {
     const frame = await captureFrame(
       <HelpDialog
         canRefresh={true}
-        terminalHeight={39}
+        terminalHeight={41}
         terminalWidth={76}
         theme={theme}
         onClose={() => {}}
       />,
       76,
-      39,
+      41,
     );
 
     const expectedRows = [
@@ -2378,6 +2378,7 @@ describe("UI components", () => {
       "Review",
       "/               focus file filter",
       "c               create review note",
+      "Shift+e         edit review note",
       "Tab             toggle files/filter focus",
       "F10             open menus",
       "r / q           reload / quit",
