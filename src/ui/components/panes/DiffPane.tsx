@@ -411,8 +411,13 @@ export function DiffPane({
     const next = new Map<string, VisibleAgentNote[]>();
 
     files.forEach((file) => {
+      // While editing, the draft composer stands in for the note being edited, so
+      // hide that saved card — otherwise it renders stacked above its own composer.
+      const editingNoteId = draftNote?.fileId === file.id ? draftNote.editingId : undefined;
       const annotations = (file.agent?.annotations ?? []).filter(
-        (annotation) => showAgentNotes || alwaysShowReviewNote(annotation),
+        (annotation) =>
+          (showAgentNotes || alwaysShowReviewNote(annotation)) &&
+          !(editingNoteId !== undefined && annotation.id === editingNoteId),
       );
       const notes: VisibleAgentNote[] = annotations.map((annotation, index) => {
         const source = reviewNoteSource(annotation);

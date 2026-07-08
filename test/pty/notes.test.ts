@@ -546,4 +546,36 @@ describe("PTY notes", () => {
       session.close();
     }
   });
+
+  test("editing a note replaces its card with the composer, not stacked below it", async () => {
+    const fixture = harness.createLongWrapFilePair();
+    const session = await harness.launchHunk({
+      args: ["diff", fixture.before, fixture.after, "--mode", "split"],
+      cols: 120,
+      rows: 24,
+    });
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+
+      await session.press("c");
+      await session.waitForText(/Draft note/, { timeout: 5_000 });
+      await session.type("Solo note body");
+      await session.press(["ctrl", "s"]);
+      await session.waitForText(/Your note/, { timeout: 5_000 });
+
+      await session.click(/\[e\]/);
+      const editing = await session.waitForText(/Draft note/, { timeout: 5_000 });
+      // The saved card is replaced in place by the composer — not left stacked above it.
+      expect(editing).not.toContain("Your note");
+
+      // Cancelling brings the saved card back unchanged.
+      await session.press("escape");
+      const restored = await session.waitForText(/Your note/, { timeout: 5_000 });
+      expect(restored).toContain("Solo note body");
+      expect(restored).not.toContain("Draft note");
+    } finally {
+      session.close();
+    }
+  });
 });
