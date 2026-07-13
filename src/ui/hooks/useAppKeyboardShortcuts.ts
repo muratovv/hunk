@@ -16,6 +16,7 @@ import {
   isStepDownKey,
   isStepUpKey,
 } from "../lib/keyboard";
+import { normalizeKeyEvent } from "../lib/keyboardLayout";
 
 type FocusArea = "files" | "filter" | "note";
 type ScrollUnit = "step" | "viewport" | "content" | "half";
@@ -604,7 +605,13 @@ export function useAppKeyboardShortcuts({
     }
   };
 
-  useKeyboard((key: KeyEvent) => {
+  useKeyboard((rawKey: KeyEvent) => {
+    // Translate non-Latin layout glyphs (e.g. Russian `й` → `q`) back to their
+    // physical US-QWERTY key so shortcut matching is layout-independent. The
+    // raw event is left untouched for focused text inputs, which still receive
+    // the literal glyph.
+    const key = normalizeKeyEvent(rawKey);
+
     if (handleMenuToggleShortcut(key)) {
       return;
     }
