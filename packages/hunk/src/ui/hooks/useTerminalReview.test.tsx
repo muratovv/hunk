@@ -968,6 +968,20 @@ describe("useTerminalReview", () => {
       });
 
       await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNoteEdit(savedId);
+        controller.updateDraftNote("edited this session");
+        controller.saveDraftNote();
+      });
+      await flush(setup);
+
+      expect(readSidecar().alpha[1]).toMatchObject({
+        id: savedId,
+        summary: "edited this session",
+        updatedAt: expect.any(String),
+      });
+
+      await act(async () => {
         expectValue(controllerRef.current).removeUserNote(persisted.id);
       });
       await flush(setup);
