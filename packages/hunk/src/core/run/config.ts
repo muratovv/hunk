@@ -1378,6 +1378,7 @@ export function resolveConfiguredCliInput(
   resolvedOptions = {
     ...resolvedOptions,
     agentContext: input.options.agentContext,
+    storeNotes: input.options.storeNotes,
     pager: input.options.pager ?? false,
     watch: input.options.watch ?? resolvedOptions.watch ?? false,
     experimental: input.options.experimental ?? false,

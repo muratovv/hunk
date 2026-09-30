@@ -59,6 +59,15 @@ import {
 } from "../../core/review/state";
 import type { ReviewNoteTargetV1 } from "../../core/review/types";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
+import {
+  seedUserNotesFromSidecar,
+  serializeUserNotesSidecar,
+  type SidecarFileAddress,
+} from "../../core/review/userNotesSidecar";
+import {
+  readUserNotesSidecar,
+  writeUserNotesSidecar,
+} from "../../core/process/userNotesSidecarFile";
 import { noDiffFileMatchesMessage } from "../../session/agent/errors";
 import type { DiffFile } from "../../core/changeset/model";
 import type { LayoutMode } from "../../core/run/commandInputs";
@@ -317,6 +326,7 @@ export function useTerminalReview({
   noteGeometry,
   sourceLabel = "",
   stmlEnabled = false,
+  userNotesSidecarPath,
 }: {
   files: DiffFile[];
   /** Note-layer visibility the launch configuration resolved for this review. */
@@ -339,6 +349,8 @@ export function useTerminalReview({
   sourceLabel?: string;
   /** Allow STML bodies for live comments in this explicitly opted-in session. */
   stmlEnabled?: boolean;
+  /** `--store-notes` sidecar: seed reviewer notes from it and write every change back. */
+  userNotesSidecarPath?: string;
   /**
    * Mutable ref the app keeps pointed at the current layout and pane width.
    * A ref (not a value) because App computes geometry after this hook runs;
@@ -350,9 +362,54 @@ export function useTerminalReview({
     () => projectReviewDocument(files, { sourceLabel }),
     [files, sourceLabel],
   );
-  const [store] = useState(() =>
-    createReviewStore(document, { showAgentNotes: initialShowAgentNotes }),
-  );
+  const [{ store, notesSidecar }] = useState(() => {
+    const seeded = userNotesSidecarPath
+      ? seedUserNotesFromSidecar(document, readUserNotesSidecar(userNotesSidecarPath))
+      : undefined;
+    return {
+      store: createReviewStore(document, {
+        showAgentNotes: initialShowAgentNotes,
+        userNotes: seeded?.notes,
+      }),
+      notesSidecar:
+        userNotesSidecarPath && seeded
+          ? {
+              path: userNotesSidecarPath,
+              unmatched: seeded.unmatched,
+              knownFiles: new Map<string, SidecarFileAddress>(),
+            }
+          : null,
+    };
+  });
+  // Mirror reviewer notes to the sidecar on every change; startup never rewrites it.
+  useEffect(() => {
+    if (!notesSidecar) {
+      return;
+    }
+    let written = store.getSnapshot().userNotes;
+    const rememberFiles = () => {
+      for (const file of store.getSnapshot().document.files) {
+        notesSidecar.knownFiles.set(file.key, file);
+      }
+    };
+    rememberFiles();
+    return store.subscribe(() => {
+      rememberFiles();
+      const { userNotes } = store.getSnapshot();
+      if (userNotes === written) {
+        return;
+      }
+      written = userNotes;
+      writeUserNotesSidecar(
+        notesSidecar.path,
+        serializeUserNotesSidecar(
+          [...notesSidecar.knownFiles.values()],
+          userNotes,
+          notesSidecar.unmatched,
+        ),
+      );
+    });
+  }, [notesSidecar, store]);
   const sourceLoadRequestsRef = useRef(new Map<string, SourceLoadRequest>());
   const nextSourceLoadRequestIdRef = useRef(1);
   const lineCursorBeforeExpandRef = useRef(new Map<string, LineCursor>());

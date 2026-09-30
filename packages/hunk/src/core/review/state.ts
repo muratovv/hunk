@@ -208,7 +208,7 @@ export interface ReviewState {
 /** Create the first authoritative semantic state for one review document. */
 export function createInitialReviewState(
   document: ReviewDocumentV1,
-  options: { showAgentNotes?: boolean } = {},
+  options: { showAgentNotes?: boolean; userNotes?: readonly ReviewStoredNote[] } = {},
 ): ReviewState {
   return {
     document,
@@ -226,7 +226,7 @@ export function createInitialReviewState(
     showAgentNotes: options.showAgentNotes ?? false,
     activeNoteId: null,
     liveNotes: [],
-    userNotes: [],
+    userNotes: options.userNotes ? [...options.userNotes] : [],
     draftNote: null,
     expandedGaps: [],
     sourceStatusByFileKey: {},

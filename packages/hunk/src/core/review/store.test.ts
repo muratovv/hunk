@@ -44,6 +44,15 @@ describe("createReviewStore", () => {
     expect(next.liveNotes).toHaveLength(1);
   });
 
+  test("starts with the reviewer notes it was seeded with", () => {
+    const seeded = createTestStoredNote({ id: "user-1", fileKey: "alpha", source: "user" });
+
+    const store = createReviewStore(createTestReviewDocument(["alpha"]), { userNotes: [seeded] });
+
+    expect(store.getSnapshot().userNotes).toEqual([seeded]);
+    expect(store.getSnapshot().stateRevision).toBe(0);
+  });
+
   test("stops notifying an unsubscribed listener", () => {
     const store = createReviewStore(createTestReviewDocument(["alpha"]));
     let notified = 0;

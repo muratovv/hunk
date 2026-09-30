@@ -33,6 +33,7 @@ import { resolveSessionSelectorBoundary } from "./sessionSelector";
 import type { VcsCatalog } from "../core/vcs/types";
 import type { ExtensionReviewDescriptor } from "../extension-api/types";
 import type { InteractiveSessionInitialization } from "../core/session/initialization";
+import { userNotesSidecarWriteWarning } from "../core/process/userNotesSidecarFile";
 
 /**
  * Load the bundled VCS catalog, memoized per call to `prepareStartupPlan`.
@@ -712,6 +713,15 @@ export async function prepareStartupPlan(
       : configured.startupNotices,
     extensionResult,
   );
+  const notesWarning = bootstrap.userNotesSidecarPath
+    ? userNotesSidecarWriteWarning(bootstrap.userNotesSidecarPath)
+    : undefined;
+  if (notesWarning) {
+    bootstrap.startupNotices = [
+      ...(bootstrap.startupNotices ?? []),
+      { key: "store-notes:unwritable", message: notesWarning },
+    ];
+  }
   controllingTerminal ??=
     stdoutIsTTY && usesPipedPatchInputImpl(cliInput) ? openControllingTerminalImpl() : null;
 

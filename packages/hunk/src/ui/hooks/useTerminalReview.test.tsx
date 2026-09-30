@@ -1,4 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { testRender } from "@opentui/react/test-utils";
 import { act, StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { builtinAppCommand } from "../../core/run/commandCatalog";
@@ -161,11 +164,13 @@ function TerminalReviewHarness({
   publishLineCursors = true,
   reviewVerticalStops,
   stmlEnabled,
+  userNotesSidecarPath,
   onController,
   onFirstController,
   onSetFiles,
 }: {
   initialFiles: DiffFile[];
+  userNotesSidecarPath?: string;
   noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
   /** Publish measured stops, as the diff pane does unless the current-line marker is off. */
   publishLineCursors?: boolean;
@@ -190,6 +195,7 @@ function TerminalReviewHarness({
     reviewVerticalStops: reviewVerticalStops ?? lineOnlyVerticalStops,
     noteGeometry,
     stmlEnabled,
+    userNotesSidecarPath,
   });
   // Capture during render, as a memoized consumer's closure would: the effects
   // below have not yet published measured cursors on the first pass.
@@ -247,9 +253,11 @@ async function renderTerminalReview(
     publishLineCursors,
     reviewVerticalStops,
     stmlEnabled,
+    userNotesSidecarPath,
     onFirstController,
   }: {
     strictMode?: boolean;
+    userNotesSidecarPath?: string;
     noteGeometry?: Parameters<typeof useTerminalReview>[0]["noteGeometry"];
     publishLineCursors?: boolean;
     reviewVerticalStops?: ReviewVerticalStop[];
@@ -266,6 +274,7 @@ async function renderTerminalReview(
       publishLineCursors={publishLineCursors}
       reviewVerticalStops={reviewVerticalStops}
       stmlEnabled={stmlEnabled}
+      userNotesSidecarPath={userNotesSidecarPath}
       onFirstController={onFirstController}
       onController={(nextController) => {
         controllerRef.current = nextController;
@@ -905,6 +914,70 @@ describe("useTerminalReview", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+
+  test("--store-notes seeds reviewer notes from the sidecar and writes every change back", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hunk-review-notes-"));
+    const sidecarPath = join(dir, ".hunk", "notes.json");
+    const persisted = {
+      id: "user:1790771476440:0",
+      source: "user",
+      filePath: "alpha.ts",
+      hunkIndex: 0,
+      side: "new",
+      line: 8,
+      newRange: [8, 8],
+      summary: "from last session",
+      author: "user",
+      createdAt: "2026-09-30T12:31:16.440Z",
+      editable: true,
+    };
+    mkdirSync(dirname(sidecarPath));
+    writeFileSync(sidecarPath, JSON.stringify({ alpha: [persisted] }));
+    const readSidecar = () => JSON.parse(readFileSync(sidecarPath, "utf8"));
+    const { controllerRef, setup } = await renderTerminalReview([createAlphaFile()], {
+      userNotesSidecarPath: sidecarPath,
+    });
+
+    try {
+      await flush(setup);
+      expect(
+        expectValue(controllerRef.current).reviewNoteSummaries.map((note) => note.body),
+      ).toEqual(["from last session"]);
+      expect(readSidecar()).toEqual({ alpha: [persisted] });
+
+      let savedId = "";
+      await act(async () => {
+        const controller = expectValue(controllerRef.current);
+        controller.startUserNote();
+        controller.updateDraftNote("new this session");
+        savedId = controller.saveDraftNote()?.id ?? "";
+      });
+      await flush(setup);
+
+      expect(readSidecar().alpha.map((note: { summary: string }) => note.summary)).toEqual([
+        "from last session",
+        "new this session",
+      ]);
+      expect(readSidecar().alpha[1]).toMatchObject({
+        id: savedId,
+        source: "user",
+        filePath: "alpha.ts",
+        editable: true,
+      });
+
+      await act(async () => {
+        expectValue(controllerRef.current).removeUserNote(persisted.id);
+      });
+      await flush(setup);
+
+      expect(readSidecar().alpha.map((note: { id: string }) => note.id)).toEqual([savedId]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

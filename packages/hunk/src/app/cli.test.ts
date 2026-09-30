@@ -164,6 +164,23 @@ describe("parseCli", () => {
     });
   });
 
+  test("parses --store-notes as a review option without advertising it", async () => {
+    const parsed = await parseCli([
+      "bun",
+      "hunk",
+      "diff",
+      "abc123",
+      "--store-notes",
+      ".hunk/notes.json",
+      "--no-wrap",
+    ]);
+
+    expect(parsed).toMatchObject({
+      kind: "vcs",
+      options: { storeNotes: ".hunk/notes.json", wrapLines: false },
+    });
+  });
+
   test("parses wheel scroll lines and rejects invalid values", async () => {
     const automatic = await parseCli(["bun", "hunk", "diff", "--wheel-scroll-lines", "auto"]);
     const fixed = await parseCli(["bun", "hunk", "diff", "--wheel-scroll-lines", "5"]);

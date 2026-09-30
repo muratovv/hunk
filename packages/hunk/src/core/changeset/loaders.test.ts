@@ -363,6 +363,23 @@ describe("loadAppBootstrap", () => {
     expect(bootstrap.reloadContext.initialWatchSignature).toBeUndefined();
   });
 
+  test("resolves the --store-notes sidecar against the launch directory", async () => {
+    const patch = {
+      kind: "patch" as const,
+      file: "-",
+      text: "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-one\n+two\n",
+    };
+
+    const stored = await loadAppBootstrap(
+      { ...patch, options: { storeNotes: ".hunk/notes.json" } },
+      { cwd: "/work/tree" },
+    );
+    const plain = await loadAppBootstrap({ ...patch, options: {} }, { cwd: "/work/tree" });
+
+    expect(stored.userNotesSidecarPath).toBe("/work/tree/.hunk/notes.json");
+    expect(plain.userNotesSidecarPath).toBeUndefined();
+  });
+
   test("loads file-pair diffs and agent context", async () => {
     const dir = mkdtempSync(join(tmpdir(), "hunk-diff-"));
     tempDirs.push(dir);

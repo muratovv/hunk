@@ -120,6 +120,12 @@ export const COMMON_REVIEW_OPTIONS = [
     publicDocs: false,
   },
   AUXILIARY_AGENT_OPTIONS.agentContext,
+  {
+    flag: "--store-notes <path>",
+    description: "persist review notes to a JSON sidecar at <path> (cwd-relative)",
+    hidden: true,
+    publicDocs: false,
+  },
   { flag: "--pager", description: "use pager-style chrome" },
   AUXILIARY_AGENT_OPTIONS.experimental,
   {
@@ -503,6 +509,7 @@ function buildCommonOptions(
     theme?: string;
     vcs?: string;
     agentContext?: string;
+    storeNotes?: string;
     pager?: boolean;
     watch?: boolean;
     experimental?: boolean;
@@ -523,6 +530,7 @@ function buildCommonOptions(
     theme: options.theme,
     vcs: options.vcs,
     agentContext: options.agentContext,
+    storeNotes: options.storeNotes,
     pager: options.pager ? true : undefined,
     watch: options.watch ? true : undefined,
     experimental:

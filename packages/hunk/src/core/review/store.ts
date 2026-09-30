@@ -9,7 +9,7 @@
  */
 import type { ReviewAction } from "./actions";
 import { reduceReviewState } from "./reducer";
-import { createInitialReviewState, type ReviewState } from "./state";
+import { createInitialReviewState, type ReviewState, type ReviewStoredNote } from "./state";
 import type { ReviewDocumentV1 } from "./types";
 
 export interface ReviewStore {
@@ -23,7 +23,7 @@ export interface ReviewStore {
 /** Create one review store for a freshly loaded review document. */
 export function createReviewStore(
   document: ReviewDocumentV1,
-  options: { showAgentNotes?: boolean } = {},
+  options: { showAgentNotes?: boolean; userNotes?: readonly ReviewStoredNote[] } = {},
 ): ReviewStore {
   let snapshot = createInitialReviewState(document, options);
   const listeners = new Set<() => void>();

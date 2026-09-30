@@ -337,6 +337,9 @@ export async function loadAppBootstrap(
     input,
     reloadContext: { cwd, repoRoot, initialWatchSignature, vcsCatalog },
     changeset,
+    ...(input.options.storeNotes
+      ? { userNotesSidecarPath: resolvePath(cwd, input.options.storeNotes) }
+      : {}),
     review,
     ...(review ? { reviewSource: "provider" as const } : {}),
     initialMode: input.options.mode ?? "auto",

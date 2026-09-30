@@ -39,6 +39,8 @@ export interface AppBootstrap<ExtensionState = unknown> {
   input: CliInput;
   reloadContext: ReloadContext;
   changeset: Changeset;
+  /** Absolute `--store-notes` sidecar path; reviewer notes load from and persist to it. */
+  userNotesSidecarPath?: string;
   initialMode: LayoutMode;
   initialTheme?: string;
   initialThemeMode?: TerminalThemeMode;

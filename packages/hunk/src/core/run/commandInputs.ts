@@ -40,6 +40,8 @@ export interface CommonOptions {
   vcs?: VcsMode;
   theme?: string;
   agentContext?: string;
+  /** Reviewer-notes sidecar path (cwd-relative); notes load from and persist to it. */
+  storeNotes?: string;
   pager?: boolean;
   watch?: boolean;
   /** Enable launch-scoped experimental review features. */

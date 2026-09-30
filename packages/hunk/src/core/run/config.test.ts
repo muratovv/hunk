@@ -249,6 +249,27 @@ describe("config resolution", () => {
     expect(launched.input.options.fast).toBe(true);
   });
 
+  test("keeps --store-notes launch-only instead of reading it from config", () => {
+    const home = createTempDir("hunk-config-notes-home-");
+    const repo = createTempDir("hunk-config-notes-repo-");
+    createRepo(repo);
+
+    mkdirSync(join(home, ".config", "hunk"), { recursive: true });
+    writeFileSync(join(home, ".config", "hunk", "config.toml"), 'store_notes = "x.json"');
+
+    const configured = resolveConfiguredCliInput(createPatchPagerInput(), {
+      cwd: repo,
+      env: { HOME: home },
+    });
+    const launched = resolveConfiguredCliInput(
+      createPatchPagerInput({ storeNotes: ".hunk/notes.json" }),
+      { cwd: repo, env: { HOME: home } },
+    );
+
+    expect(configured.input.options.storeNotes).toBeUndefined();
+    expect(launched.input.options.storeNotes).toBe(".hunk/notes.json");
+  });
+
   test("reads the current-line style from config and lets CLI flags outrank it", () => {
     const home = createTempDir("hunk-config-home-");
     const repo = createTempDir("hunk-config-repo-");
