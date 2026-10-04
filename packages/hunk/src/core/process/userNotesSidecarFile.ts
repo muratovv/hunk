@@ -1,8 +1,16 @@
 /** Disk I/O for the `--store-notes` review-notes sidecar. */
-import { accessSync, constants, existsSync, readFileSync, renameSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
 import type { UserNotesSidecar } from "../review/userNotesSidecar";
-import { writeAppStateRecord } from "./appStateFile";
 
 interface SidecarRead {
   sidecar: UserNotesSidecar;
@@ -56,13 +64,17 @@ export function readUserNotesSidecar(path: string): UserNotesSidecar {
 
 /** Atomically replace the sidecar; returns the failure message instead of throwing. */
 export function writeUserNotesSidecar(path: string, sidecar: UserNotesSidecar): string | undefined {
+  const tempPath = `${path}.${process.pid}.tmp`;
   try {
     if (readSidecarFile(path).corrupt) {
       renameSync(path, `${path}.corrupt`);
     }
-    writeAppStateRecord(path, sidecar);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(tempPath, JSON.stringify(sidecar, null, 2), { encoding: "utf8" });
+    renameSync(tempPath, path);
     return undefined;
   } catch (error) {
+    rmSync(tempPath, { force: true });
     debugSidecar("write", path, error);
     return `hunk: could not save review notes to ${path}: ${String(error)}`;
   }

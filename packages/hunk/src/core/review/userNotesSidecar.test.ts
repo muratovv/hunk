@@ -109,4 +109,28 @@ describe("serializeUserNotesSidecar", () => {
 
     expect(serializeUserNotesSidecar(document.files, notes, unmatched)).toEqual(cleaned);
   });
+
+  test("writes fields in the legacy build's order so the JSON is byte-identical", () => {
+    const document = createTestReviewDocument([{ key: "alpha", path: "alpha.ts" }]);
+    const edited = legacyNote({ id: "user:2:1", updatedAt: "2026-10-01T08:00:00.000Z" });
+    const { notes } = seedUserNotesFromSidecar(document, { alpha: [legacyNote(), edited] });
+
+    const [plain, withEdit] = serializeUserNotesSidecar(document.files, notes, {}).alpha ?? [];
+
+    const legacyOrder = [
+      "source",
+      "filePath",
+      "hunkIndex",
+      "side",
+      "line",
+      "newRange",
+      "summary",
+      "author",
+      "editable",
+      "id",
+      "createdAt",
+    ];
+    expect(Object.keys(plain ?? {})).toEqual(legacyOrder);
+    expect(Object.keys(withEdit ?? {})).toEqual([...legacyOrder, "updatedAt"]);
+  });
 });

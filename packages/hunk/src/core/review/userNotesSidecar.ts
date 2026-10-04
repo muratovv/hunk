@@ -143,9 +143,8 @@ export function serializeUserNotesSidecar(
       throw new Error(`No file address is known for review note ${note.id}.`);
     }
     const { side, line } = reviewNoteAnchorLine(note);
+    // Key order mirrors the fork-main writer so both builds emit identical JSON.
     (sidecar[file.runtimeId] ??= []).push({
-      id: note.id,
-      ...(note.parentId ? { parentId: note.parentId } : {}),
       source: "user",
       filePath: file.path,
       hunkIndex: reviewNoteOwnerHunkIndex(note),
@@ -155,9 +154,11 @@ export function serializeUserNotesSidecar(
       ...(note.anchor.newRange ? { newRange: [...note.anchor.newRange] } : {}),
       summary: note.summary,
       author: note.author ?? "user",
+      editable: true,
+      id: note.id,
+      ...(note.parentId ? { parentId: note.parentId } : {}),
       createdAt: note.createdAt ?? "",
       ...(note.updatedAt ? { updatedAt: note.updatedAt } : {}),
-      editable: true,
     } as SidecarUserNote);
   }
   for (const [runtimeId, entries] of Object.entries(unmatched)) {

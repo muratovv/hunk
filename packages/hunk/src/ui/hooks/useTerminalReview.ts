@@ -1680,7 +1680,7 @@ export function useTerminalReview({
         : runIntent(
             { type: "notes/create-user", consumeDraft: true },
             {
-              noteId: `user:${Date.now()}-${++userNoteSequenceRef.current}`,
+              noteId: `user:${Date.now()}:${userNoteSequenceRef.current++}`,
               timestamp,
             },
           );

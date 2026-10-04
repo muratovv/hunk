@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { UserNotesSidecar } from "../review/userNotesSidecar";
@@ -43,6 +51,15 @@ describe("user notes sidecar file", () => {
 
     expect(readUserNotesSidecar(path)).toEqual(SIDECAR);
     expect(readdirSync(dirname(path))).toEqual(["notes.json"]);
+  });
+
+  test("creates the sidecar with umask-default permissions, like the legacy build", () => {
+    const path = join(dir, "notes.json");
+
+    writeUserNotesSidecar(path, SIDECAR);
+
+    expect(statSync(path).mode & 0o777).toBe(0o666 & ~process.umask());
+    expect(readFileSync(path, "utf8")).toBe(JSON.stringify(SIDECAR, null, 2));
   });
 
   test("reads a missing or empty sidecar as no notes", () => {

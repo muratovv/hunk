@@ -882,7 +882,8 @@ describe("useTerminalReview", () => {
       });
       await flush(setup);
 
-      expect(savedNoteId).toStartWith("user:");
+      // Same id shape as the fork-main build: user:<epoch-ms>:<sequence from 0>.
+      expect(savedNoteId).toMatch(/^user:\d+:0$/);
       expect(expectValue(controllerRef.current).store.getSnapshot().activeNoteId).toBe(savedNoteId);
       expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
       expect(expectValue(controllerRef.current).reviewNoteSummaries).toMatchObject([
@@ -1203,7 +1204,7 @@ describe("useTerminalReview", () => {
       });
       await flush(setup);
 
-      expect(savedIds.first).toBe(`user:${fixedNow}-1`);
+      expect(savedIds.first).toBe(`user:${fixedNow}:0`);
       expect(savedIds.second).toBeUndefined();
       expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(1);
 
@@ -1222,7 +1223,7 @@ describe("useTerminalReview", () => {
       });
       await flush(setup);
 
-      expect(savedIds.followUp).toBe(`user:${fixedNow}-2`);
+      expect(savedIds.followUp).toBe(`user:${fixedNow}:1`);
       expect(savedIds.followUp).not.toBe(savedIds.first);
       expect(expectValue(controllerRef.current).userNotesByFileId.alpha).toHaveLength(2);
     } finally {
