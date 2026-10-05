@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_HUNK_GAP } from "../../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
 import type { DiffFile } from "../../core/changeset/model";
-import { parseReviewGapId, type ReviewGapReveal } from "../../core/review/expansion";
+import type { ReviewGapReveal } from "../../core/review/expansion";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type { UserNoteLineTarget } from "../../core/liveComments";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
@@ -36,19 +36,6 @@ const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const NO_REVEALS: ReadonlyMap<string, ReviewGapReveal> = new Map();
 
 const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
-
-/** Hunks that revealed context themselves: the bottom of the gap above, the top of the one below. */
-function hunksOwningReveals(reveals: ReadonlyMap<string, ReviewGapReveal>) {
-  const owners = new Set<number>();
-  for (const [gapId, reveal] of reveals) {
-    const gap = parseReviewGapId(gapId);
-    if (!gap) continue;
-    const above = gap.position === "trailing" ? gap.hunkIndex : gap.hunkIndex - 1;
-    if (reveal.top > 0 && above >= 0) owners.add(above);
-    if (reveal.bottom > 0 && gap.position === "before") owners.add(gap.hunkIndex);
-  }
-  return owners;
-}
 
 export interface ActiveAddNoteAffordance {
   hunkIndex: number;
@@ -276,7 +263,6 @@ export function DiffSectionBody({
   // incoming props so rows keep hiding affordances when the handlers are not provided.
   const stableGapAction = useCallback((action: GapAction) => onGapActionRef.current?.(action), []);
   const gapActionHandler = fileHasSourceFetcher && onGapAction ? stableGapAction : undefined;
-  const hunksWithRevealedContext = useMemo(() => hunksOwningReveals(gapReveals), [gapReveals]);
 
   // Only a mounted section asks, so a large review fetches what the reader is near.
   const needsTrailingGapSize =
@@ -473,10 +459,6 @@ export function DiffSectionBody({
               onHoverRow={handleHoverRow}
               onStartUserNoteAtHunk={startUserNoteAtHunkHandler}
               onGapAction={gapActionHandler}
-              hunkHasRevealedContext={
-                plannedRow.row.type === "hunk-header" &&
-                hunksWithRevealedContext.has(plannedRow.row.hunkIndex)
-              }
             />
           </box>
         );

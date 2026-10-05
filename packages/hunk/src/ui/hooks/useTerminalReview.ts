@@ -1160,16 +1160,13 @@ export function useTerminalReview({
             fileKey,
             gapId: action.gapId,
             edge: action.edge,
-            lines: action.lines ?? REVIEW_GAP_REVEAL_STEP,
+            lines: REVIEW_GAP_REVEAL_STEP,
           });
           return;
         case "collapse-gap":
           if (isReviewGapExpanded(store.getSnapshot(), fileKey, action.gapId)) {
             applyGapToggle(file, { type: "expansion/toggle", fileKey, gapId: action.gapId });
           }
-          return;
-        case "collapse-hunk":
-          runIntent({ type: "expansion/collapse-hunk", fileKey, hunkIndex: action.hunkIndex });
           return;
         case "load-source":
           startSourceLoad(file, fileKey, reviewExpansionSide(file.metadata.type));

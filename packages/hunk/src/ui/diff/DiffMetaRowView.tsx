@@ -22,18 +22,17 @@ export interface DiffMetaRowViewProps {
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   /** Present only when the file has source to expand gaps from. */
   onGapAction?: (action: GapAction) => void;
-  /** This header's hunk has revealed context of its own, so it offers ✕ to fold it back. */
-  hunkHasRevealedContext?: boolean;
 }
 
 interface GapZone {
   key: string;
   text: string;
   fg: string;
-  action: GapAction;
+  /** Absent for the label: a near miss on an arrow must not do anything bigger than a step. */
+  action?: GapAction;
 }
 
-/** One clickable span of a meta row; claims the event so the row does not also act on it. */
+/** One span of a gap row; claims a click only when it carries an action. */
 function GapZoneView({
   zone,
   theme,
@@ -43,13 +42,18 @@ function GapZoneView({
   theme: AppTheme;
   onGapAction: (action: GapAction) => void;
 }) {
+  const { action } = zone;
   return (
     <box
       style={{ width: measureTextWidth(zone.text), height: 1 }}
-      onMouseUp={(event: TuiMouseEvent) => {
-        markNestedRowMouseAction(event);
-        onGapAction(zone.action);
-      }}
+      onMouseUp={
+        action
+          ? (event: TuiMouseEvent) => {
+              markNestedRowMouseAction(event);
+              onGapAction(action);
+            }
+          : undefined
+      }
     >
       <text fg={zone.fg} bg={theme.panelAlt}>
         {zone.text}
@@ -59,40 +63,40 @@ function GapZoneView({
 }
 
 /**
- * The clickable zones of one expandable gap separator.
+ * The zones of one expandable gap row.
  *
  * ▼ grows the gap's top edge down from the hunk above, ▲ grows its bottom edge up from
- * the hunk below, so the file's first gap has only ▲ and its trailing gap only ▼. The
- * label reveals everything still hidden; ✕ appears once part of the gap is open.
+ * the hunk below, so the file's first gap has only ▲ and its trailing gap only ▼. Once
+ * anything is revealed the row offers ✕; a fully revealed gap keeps only that.
  */
-function gapSeparatorZones(
+function gapRowZones(
   row: Extract<PlannedDiffMetaReviewRow["row"], { type: "collapsed" }>,
   theme: AppTheme,
   width: number,
 ): GapZone[] {
   const gapId = reviewGapId(row.position, row.hunkIndex);
-  const hidden = row.newRange[1] - row.newRange[0] + 1;
-  const hasAbove = row.position === "trailing" || row.hunkIndex > 0;
-  const hasBelow = row.position === "before";
+  const hasHidden = !row.fullyRevealed;
+  const hasAbove = hasHidden && (row.position === "trailing" || row.hunkIndex > 0);
+  const hasBelow = hasHidden && row.position === "before";
+  const label: GapZone = {
+    key: "label",
+    text: `${hasAbove ? "" : " "}··· ${row.text} ···`,
+    fg: theme.muted,
+  };
   const zones: GapZone[] = [];
   if (hasAbove) {
     zones.push({
       key: "down",
-      text: " ▼",
+      text: " ▼ ",
       fg: theme.text,
       action: { kind: "reveal", gapId, edge: "top" },
     });
   }
-  zones.push({
-    key: "label",
-    text: ` ··· ${row.text} ···`,
-    fg: theme.muted,
-    action: { kind: "reveal", gapId, edge: "top", lines: hidden },
-  });
+  zones.push(label);
   if (hasBelow) {
     zones.push({
       key: "up",
-      text: " ▲",
+      text: " ▲ ",
       fg: theme.text,
       action: { kind: "reveal", gapId, edge: "bottom" },
     });
@@ -100,13 +104,12 @@ function gapSeparatorZones(
   if (row.revealed) {
     zones.push({
       key: "collapse",
-      text: "  ✕",
+      text: " ✕ ",
       fg: theme.text,
       action: { kind: "collapse-gap", gapId },
     });
   }
   // The arrows and ✕ always fit; only the label gives way on a narrow pane.
-  const label = zones.find((zone) => zone.key === "label")!;
   const fixedWidth = zones.reduce(
     (total, zone) => (zone === label ? total : total + measureTextWidth(zone.text)),
     1,
@@ -126,7 +129,6 @@ export function DiffMetaRowView({
   onHoverRow,
   onStartUserNoteAtHunk,
   onGapAction,
-  hunkHasRevealedContext = false,
 }: DiffMetaRowViewProps) {
   const { anchorId, row } = plannedRow;
   if (row.type === "hunk-header" && !showHunkHeaders) {
@@ -145,7 +147,7 @@ export function DiffMetaRowView({
         <text fg={railFg} bg={theme.panelAlt}>
           {diffRailMarker()}
         </text>
-        {gapSeparatorZones(row, theme, width).map((zone) => (
+        {gapRowZones(row, theme, width).map((zone) => (
           <GapZoneView key={zone.key} zone={zone} theme={theme} onGapAction={onGapAction} />
         ))}
       </box>
@@ -153,28 +155,14 @@ export function DiffMetaRowView({
   }
 
   const badges = [
-    row.type === "hunk-header" && hunkHasRevealedContext && onGapAction
-      ? {
-          key: "collapse-hunk",
-          text: "✕ ",
-          fg: theme.text,
-          bg: theme.panelAlt,
-          onClick: () => onGapAction({ kind: "collapse-hunk", hunkIndex: row.hunkIndex }),
-        }
-      : null,
     showAddNoteBadge
       ? {
           key: "user-note",
           text: CODE_ROW_ADD_NOTE_BADGE_TEXT,
-          fg: theme.noteTitleText,
-          bg: theme.noteTitleBackground,
           onClick: () => onStartUserNoteAtHunk?.(row.hunkIndex),
         }
       : null,
-  ].filter(
-    (badge): badge is { key: string; text: string; fg: string; bg: string; onClick: () => void } =>
-      Boolean(badge),
-  );
+  ].filter((badge): badge is { key: string; text: string; onClick: () => void } => Boolean(badge));
   const badgeWidth = badges.reduce((total, badge) => total + badge.text.length + 1, 0);
   const labelText = row.type === "collapsed" ? `··· ${row.text} ···` : row.text;
   const label = fitText(labelText, Math.max(0, width - 1 - badgeWidth));
@@ -240,7 +228,7 @@ export function DiffMetaRowView({
             badge.onClick();
           }}
         >
-          <text fg={badge.fg} bg={badge.bg}>{` ${badge.text}`}</text>
+          <text fg={theme.noteTitleText} bg={theme.noteTitleBackground}>{` ${badge.text}`}</text>
         </box>
       ))}
     </box>
