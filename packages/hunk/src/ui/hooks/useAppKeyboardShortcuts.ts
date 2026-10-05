@@ -16,6 +16,7 @@ import {
 import type { ExtensionDialogRequest } from "../lib/extensionDialogs";
 import { toExtensionKeyEvent } from "../lib/extensionKeyEvent";
 import { isEscapeKey, isSaveDraftNoteKey } from "../lib/keyboard";
+import { normalizeKeyEvent } from "../lib/keyboardLayout";
 import { routeKeyOwnership, type KeyOwner } from "../lib/keyRouting";
 import { handleViewPreferenceQuitPromptKey } from "../lib/viewPreferenceQuitKeys";
 
@@ -589,7 +590,10 @@ export function useAppKeyboardShortcuts({
     return matched !== undefined;
   };
 
-  useKeyboard((key: KeyEvent) => {
+  useKeyboard((rawKey: KeyEvent) => {
+    // Match by physical key on non-Latin layouts; focused inputs still receive the raw glyph.
+    const key = normalizeKeyEvent(rawKey);
+
     // Route through the active menu first. Its navigation keys stay host-owned,
     // while an advertised accelerator gets one direct trip to the command table
     // before focused inputs or extension modes can claim it.
