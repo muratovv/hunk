@@ -1376,6 +1376,7 @@ end
     buildHunkCommand,
     clickAndWaitForSnapshot,
     clickAndWaitForText,
+    sendClick,
     shellQuote,
     pressAndWaitForSnapshot,
     pressAndWaitForText,

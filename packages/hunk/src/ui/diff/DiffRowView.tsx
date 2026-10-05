@@ -35,7 +35,6 @@ export interface DiffRowViewProps {
   onHoverRow?: (rowKey: string) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onGapAction?: (action: GapAction) => void;
-  hunkHasRevealedContext?: boolean;
 }
 
 /** Reject a planned row variant that lacks a mounted row view. */
@@ -68,7 +67,6 @@ export const DiffRowView = memo(function DiffRowViewComponent({
   onHoverRow,
   onStartUserNoteAtHunk,
   onGapAction,
-  hunkHasRevealedContext,
 }: DiffRowViewProps) {
   if (isPlannedDiffMetaReviewRow(plannedRow)) {
     return (
@@ -82,7 +80,6 @@ export const DiffRowView = memo(function DiffRowViewComponent({
         onHoverRow={onHoverRow}
         onStartUserNoteAtHunk={onStartUserNoteAtHunk}
         onGapAction={onGapAction}
-        hunkHasRevealedContext={hunkHasRevealedContext}
       />
     );
   }

@@ -51,8 +51,10 @@ export type DiffRow =
       // uses these to slice the file contents that fill the gap.
       oldRange: [number, number];
       newRange: [number, number];
-      /** Set on the separator left between the revealed edges of a partly opened gap. */
+      /** Set once any of the gap is revealed: the row then offers ✕ to fold it back. */
       revealed?: boolean;
+      /** Nothing of the gap is hidden any more; the row is only a fold marker. */
+      fullyRevealed?: boolean;
     }
   | {
       type: "hunk-header";

@@ -4354,7 +4354,7 @@ describe("UI components", () => {
     expect(between).toBeDefined();
   });
 
-  test("DiffSectionBody routes ▼, ▲ and the label of a gap to their reveals", async () => {
+  test("DiffSectionBody steps a gap from ▼ / ▲ even on a near miss and ignores the label", async () => {
     const { file } = createTwoHunkExpandableDiffFile("gap-clicks");
     const actions: GapAction[] = [];
     const setup = await testRender(
@@ -4377,7 +4377,8 @@ describe("UI components", () => {
       const frameLines = setup.captureCharFrame().split("\n");
       const y = frameLines.findIndex((line) => line.includes("13 unchanged lines"));
       const row = frameLines[y]!;
-      for (const x of [row.indexOf("▼"), row.indexOf("▲"), row.indexOf("13 unchanged")]) {
+      // One cell right of ▼ and one cell left of ▲ still belong to the arrows.
+      for (const x of [row.indexOf("▼") + 1, row.indexOf("▲") - 1, row.indexOf("13 unchanged")]) {
         await act(async () => {
           await setup.mockMouse.click(x, y);
         });
@@ -4386,7 +4387,6 @@ describe("UI components", () => {
       expect(actions).toEqual([
         { kind: "reveal", gapId: "before:1", edge: "top" },
         { kind: "reveal", gapId: "before:1", edge: "bottom" },
-        { kind: "reveal", gapId: "before:1", edge: "top", lines: 13 },
       ]);
     } finally {
       await act(async () => {
@@ -4395,7 +4395,7 @@ describe("UI components", () => {
     }
   });
 
-  test("DiffSectionBody offers ✕ on a partly revealed gap and on the hunk that revealed it", async () => {
+  test("DiffSectionBody keeps ✕ on a gap's own row, partly or fully revealed", async () => {
     const { file, after } = createTwoHunkExpandableDiffFile("gap-collapse");
     const actions: GapAction[] = [];
     const setup = await testRender(
@@ -4407,7 +4407,12 @@ describe("UI components", () => {
         selectedHunkIndex={0}
         scrollable={false}
         showHunkHeaders
-        gapReveals={new Map([["before:1", { top: 0, bottom: 2 }]])}
+        gapReveals={
+          new Map([
+            ["before:0", { top: 0, bottom: 6 }],
+            ["before:1", { top: 0, bottom: 2 }],
+          ])
+        }
         sourceStatus={{ kind: "loaded", text: after }}
         onGapAction={(action) => actions.push(action)}
       />,
@@ -4419,25 +4424,24 @@ describe("UI components", () => {
         await setup.renderOnce();
       });
       const frameLines = setup.captureCharFrame().split("\n");
-      const gapY = frameLines.findIndex((line) => line.includes("11 unchanged lines"));
-      // The second hunk's header: hunk 1 owns the bottom edge it revealed.
-      const headerY = frameLines.findLastIndex((line) => line.includes("@@"));
-      expect(frameLines[gapY]).toContain("✕");
-      expect(frameLines[headerY]).toContain("✕");
-      expect(frameLines.filter((line) => line.includes("@@") && line.includes("✕"))).toHaveLength(
-        1,
-      );
+      const foldY = frameLines.findIndex((line) => line.includes("6 lines shown"));
+      const partialY = frameLines.findIndex((line) => line.includes("11 unchanged lines"));
+      // The file's first gap is fully open: its fold row sits above line 1, without arrows.
+      expect(foldY).toBe(frameLines.findIndex((line) => / line 1\s*$/.test(line)) - 1);
+      expect(frameLines[foldY]).toContain("✕");
+      expect(frameLines[foldY]).not.toMatch(/[▲▼]/);
+      expect(frameLines[partialY]).toContain("✕");
+      expect(frameLines.filter((line) => line.includes("@@") && line.includes("✕"))).toEqual([]);
 
-      await act(async () => {
-        await setup.mockMouse.click(frameLines[gapY]!.indexOf("✕"), gapY);
-      });
-      await act(async () => {
-        await setup.mockMouse.click(frameLines[headerY]!.indexOf("✕"), headerY);
-      });
+      for (const y of [foldY, partialY]) {
+        await act(async () => {
+          await setup.mockMouse.click(frameLines[y]!.indexOf("✕"), y);
+        });
+      }
 
       expect(actions).toEqual([
+        { kind: "collapse-gap", gapId: "before:0" },
         { kind: "collapse-gap", gapId: "before:1" },
-        { kind: "collapse-hunk", hunkIndex: 1 },
       ]);
     } finally {
       await act(async () => {

@@ -137,7 +137,7 @@ describe("expandCollapsedRows", () => {
     expect(collapsed.text.toLowerCase()).toContain("source too large");
   });
 
-  test("replaces a fully revealed gap with split-line context rows", () => {
+  test("shows a fully revealed gap as split-line context rows plus a fold row", () => {
     const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 3], [1, 3]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
@@ -147,7 +147,14 @@ describe("expandCollapsedRows", () => {
       side: "new",
     });
 
-    expect(result.length).toBe(rows.length - 1 + 3);
+    expect(result.length).toBe(rows.length + 3);
+    // The gap's fold row stays where its hidden middle was, here after all three lines.
+    expect(result[3]).toMatchObject({
+      type: "collapsed",
+      text: "3 lines shown",
+      revealed: true,
+      fullyRevealed: true,
+    });
 
     const inserted = result.slice(0, 3);
     expect(inserted.every((row) => row.type === "split-line")).toBe(true);
@@ -240,8 +247,9 @@ describe("expandCollapsedRows", () => {
       side: "new",
     });
 
-    expect(result.length).toBe(rows.length - 1 + 3);
-    const last = result[result.length - 1];
+    expect(result.length).toBe(rows.length + 3);
+    expect(result.at(-1)).toMatchObject({ type: "collapsed", fullyRevealed: true });
+    const last = result.at(-2);
     if (!last || last.type !== "unified-line") {
       throw new Error("expected synthesized unified-line rows after the trailing collapsed row");
     }

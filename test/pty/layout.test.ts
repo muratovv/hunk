@@ -419,7 +419,10 @@ describe("PTY layout", () => {
         (text) => text.includes("line 86 of the file") && !text.includes("3 unchanged lines"),
         5_000,
       );
-      expect(joined).toMatch(/line 86 of the file\s*\n\s*▌@@ -87/);
+      // Joined: only the gap's fold row is left between the two hunks.
+      expect(joined).toMatch(
+        /line 86 of the file\s*\n\s*▌ ··· 43 lines shown ··· ✕\s*\n\s*▌@@ -87/,
+      );
 
       const above = await harness.pressAndWaitForSnapshot(
         session,
@@ -436,6 +439,7 @@ describe("PTY layout", () => {
         5_000,
       );
       expect(folded).not.toContain("✕");
+      expect(folded).not.toContain("lines shown");
     } finally {
       session.close();
     }
@@ -458,7 +462,7 @@ describe("PTY layout", () => {
       await harness.pressAndWaitForSnapshot(
         session,
         ["shift", "z"],
-        (text) => text.includes("▼ ··· 7 unchanged lines ···  ✕"),
+        (text) => text.includes("▼ ··· 7 unchanged lines ··· ✕"),
         5_000,
       );
       const end = await harness.pressAndWaitForSnapshot(
@@ -467,14 +471,20 @@ describe("PTY layout", () => {
         (text) => !text.includes("7 unchanged lines"),
         5_000,
       );
-      expect(end).toContain("line 120 of the file");
-      expect(end).not.toContain("27 unchanged lines");
+      expect(end).toMatch(/line 120 of the file\s*\n\s*▌ ··· 27 lines shown ··· ✕/);
+
+      const folded = await harness.clickAndWaitForText(
+        session,
+        /(?<=27 lines shown ··· )✕/,
+        /▼ ··· 27 unchanged lines/,
+      );
+      expect(folded).not.toContain("line 120 of the file");
     } finally {
       session.close();
     }
   });
 
-  test("clicking ▼, ▲, a ✕ and the label drives the same gap", async () => {
+  test("clicking ▼ and ▲ steps a gap, the label does nothing and ✕ folds it from where it is", async () => {
     const fixture = harness.createDirectionalGapRepoFixture();
     const session = await harness.launchHunk({
       args: ["diff", "--mode", "unified", "--no-sidebar"],
@@ -490,20 +500,44 @@ describe("PTY layout", () => {
       await harness.clickAndWaitForText(session, "▼", /··· 23 unchanged lines/, { first: true });
       await harness.clickAndWaitForText(session, /▲(?=  ✕)/, /··· 3 unchanged lines/);
 
-      // Each hunk header offers ✕ for what its own arrow revealed: the lower hunk's ▲ goes.
-      await harness.clickAndWaitForText(session, /(?<=@@ -87.*)✕/, /··· 23 unchanged lines/);
+      // A click on the label is not a reveal: a near miss must never open the whole gap.
+      harness.sendClick(session, "3 unchanged lines");
+      await session.waitIdle({ timeout: 400 });
+      expect(await session.text({ immediate: true })).toContain("··· 3 unchanged lines");
+
+      await harness.clickAndWaitForText(session, /▲(?=  ✕)/, /43 lines shown ··· ✕/);
       await harness.clickAndWaitForText(
         session,
-        /(?<=23 unchanged lines ··· ▲  )✕/,
-        /43 unchanged lines/,
+        /(?<=43 lines shown ··· )✕/,
+        /▼ ··· 43 unchanged lines/,
       );
+    } finally {
+      session.close();
+    }
+  });
 
-      const opened = await harness.clickAndWaitForSnapshot(
+  test("a fully revealed file start keeps its ✕ above the first line", async () => {
+    const fixture = harness.createDirectionalGapRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--no-sidebar"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 70,
+    });
+
+    try {
+      await session.waitForText(/▼ ··· 27 unchanged lines ···/, { timeout: 15_000 });
+      await harness.pressAndWaitForText(session, "z", /16 unchanged lines/, { timeout: 5_000 });
+      const opened = await harness.pressAndWaitForText(session, "z", /36 lines shown ··· ✕/, {
+        timeout: 5_000,
+      });
+      expect(opened).toMatch(/▌ ··· 36 lines shown ··· ✕\s*\n\s*▌\s+1\s+1\s+line 1 of the file/);
+
+      await harness.clickAndWaitForText(
         session,
-        "43 unchanged lines",
-        (text) => text.includes("line 86 of the file") && !text.includes("43 unchanged"),
+        /(?<=36 lines shown ··· )✕/,
+        /··· 36 unchanged lines ··· ▲/,
       );
-      expect(opened).toContain("line 44 of the file");
     } finally {
       session.close();
     }

@@ -51,6 +51,10 @@ export function loadedSourceLineCount(status: FileSourceStatus | undefined) {
   return count;
 }
 
+function shownRowText(lineCount: number) {
+  return `${lineCount} ${lineCount === 1 ? "line" : "lines"} shown`;
+}
+
 function hiddenRowText(lineCount: number) {
   return `${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}`;
 }
@@ -131,8 +135,7 @@ function buildUnifiedContextRow(
 /**
  * Replace each revealed collapsed row with the unchanged file lines it now shows.
  *
- * A gap emits its top-edge lines, then a separator for the still-hidden middle, then its
- * bottom-edge lines; once nothing is hidden the separator goes and the hunks join. While
+ * A gap emits its top-edge lines, then its own row, then its bottom-edge lines. While
  * source is loading or failed, the collapsed row stays whole and its label reports that.
  */
 export function expandCollapsedRows(
@@ -218,6 +221,8 @@ export function expandCollapsedRows(
       pushContextRow(offset);
     }
 
+    // The gap's row stays where its hidden middle is, so its ✕ is wherever the reader is
+    // looking; once nothing is hidden it shrinks to a fold marker for the whole gap.
     const hidden = lineCount - reveal.top - reveal.bottom;
     if (hidden > 0) {
       const oldStart = row.oldRange[0] + reveal.top;
@@ -229,6 +234,8 @@ export function expandCollapsedRows(
         newRange: [newStart, newStart + hidden - 1],
         revealed: true,
       });
+    } else {
+      result.push({ ...row, text: shownRowText(lineCount), revealed: true, fullyRevealed: true });
     }
 
     for (let offset = lineCount - reveal.bottom; offset < lineCount; offset += 1) {
