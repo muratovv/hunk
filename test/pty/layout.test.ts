@@ -358,26 +358,152 @@ describe("PTY layout", () => {
         timeout: 15_000,
       });
 
-      expect(initial).toContain("▾ 1 unchanged line");
+      expect(initial).toContain("1 unchanged line ··· ▲");
       expect(initial).not.toContain("hiddenLine01");
 
       const expanded = await harness.pressAndWaitForSnapshot(
         session,
         "z",
-        (text) => text.includes("Hide 1 unchanged line") && text.includes("hiddenLine01"),
+        (text) => text.includes("hiddenLine01") && !text.includes("1 unchanged line ···"),
         5_000,
       );
-
       expect(expanded).toContain("hiddenLine01");
 
       const collapsed = await harness.pressAndWaitForSnapshot(
         session,
-        "z",
-        (text) => text.includes("▾ 1 unchanged line") && !text.includes("hiddenLine01"),
+        "x",
+        (text) => text.includes("1 unchanged line ··· ▲") && !text.includes("hiddenLine01"),
         5_000,
       );
-
       expect(collapsed).not.toContain("hiddenLine01");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("z and Shift+z grow context around the selected hunk step by step and x folds it back", async () => {
+    const fixture = harness.createDirectionalGapRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--no-sidebar"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 70,
+    });
+
+    try {
+      // The file tail is sized from loaded source, so its ▼ arrives a moment after launch.
+      const initial = await session.waitForText(/▼ ··· 27 unchanged lines ···/, {
+        timeout: 15_000,
+      });
+      expect(initial).toContain("36 unchanged lines ··· ▲");
+      expect(initial).toContain("▼ ··· 43 unchanged lines ··· ▲");
+
+      const firstStep = await harness.pressAndWaitForSnapshot(
+        session,
+        ["shift", "z"],
+        (text) => text.includes("▼ ··· 23 unchanged lines ··· ▲  ✕"),
+        5_000,
+      );
+      expect(firstStep).toContain("line 63 of the file");
+      expect(firstStep).not.toContain("line 64 of the file");
+
+      await harness.pressAndWaitForSnapshot(
+        session,
+        ["shift", "z"],
+        (text) => text.includes("▼ ··· 3 unchanged lines ··· ▲  ✕"),
+        5_000,
+      );
+      const joined = await harness.pressAndWaitForSnapshot(
+        session,
+        ["shift", "z"],
+        (text) => text.includes("line 86 of the file") && !text.includes("3 unchanged lines"),
+        5_000,
+      );
+      expect(joined).toMatch(/line 86 of the file\s*\n\s*▌@@ -87/);
+
+      const above = await harness.pressAndWaitForSnapshot(
+        session,
+        "z",
+        (text) => text.includes("16 unchanged lines ··· ▲  ✕"),
+        5_000,
+      );
+      expect(above).toContain("line 17 of the file");
+
+      const folded = await harness.pressAndWaitForSnapshot(
+        session,
+        "x",
+        (text) => text.includes("36 unchanged lines ··· ▲") && text.includes("43 unchanged lines"),
+        5_000,
+      );
+      expect(folded).not.toContain("✕");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("Shift+z on the last hunk reveals the file tail down to its last line", async () => {
+    const fixture = harness.createDirectionalGapRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "split", "--no-sidebar"],
+      cwd: fixture.dir,
+      cols: 140,
+      rows: 70,
+    });
+
+    try {
+      await session.waitForText(/▼ ··· 27 unchanged lines ···/, { timeout: 15_000 });
+      // Select the last hunk; its ▼ is the file tail.
+      await session.press("]");
+      await session.waitIdle({ timeout: 400 });
+      await harness.pressAndWaitForSnapshot(
+        session,
+        ["shift", "z"],
+        (text) => text.includes("▼ ··· 7 unchanged lines ···  ✕"),
+        5_000,
+      );
+      const end = await harness.pressAndWaitForSnapshot(
+        session,
+        ["shift", "z"],
+        (text) => !text.includes("7 unchanged lines"),
+        5_000,
+      );
+      expect(end).toContain("line 120 of the file");
+      expect(end).not.toContain("27 unchanged lines");
+    } finally {
+      session.close();
+    }
+  });
+
+  test("clicking ▼, ▲, a ✕ and the label drives the same gap", async () => {
+    const fixture = harness.createDirectionalGapRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--no-sidebar"],
+      cwd: fixture.dir,
+      cols: 120,
+      rows: 70,
+    });
+
+    try {
+      await session.waitForText(/▼ ··· 27 unchanged lines ···/, { timeout: 15_000 });
+
+      // The first ▼ on screen is the between-hunk gap's: the file's first gap has only ▲.
+      await harness.clickAndWaitForText(session, "▼", /··· 23 unchanged lines/, { first: true });
+      await harness.clickAndWaitForText(session, /▲(?=  ✕)/, /··· 3 unchanged lines/);
+
+      // Each hunk header offers ✕ for what its own arrow revealed: the lower hunk's ▲ goes.
+      await harness.clickAndWaitForText(session, /(?<=@@ -87.*)✕/, /··· 23 unchanged lines/);
+      await harness.clickAndWaitForText(
+        session,
+        /(?<=23 unchanged lines ··· ▲  )✕/,
+        /43 unchanged lines/,
+      );
+
+      const opened = await harness.clickAndWaitForSnapshot(
+        session,
+        "43 unchanged lines",
+        (text) => text.includes("line 86 of the file") && !text.includes("43 unchanged"),
+      );
+      expect(opened).toContain("line 44 of the file");
     } finally {
       session.close();
     }

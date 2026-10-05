@@ -295,7 +295,9 @@ describe("PTY current line", () => {
     }
   });
 
-  test("expanding a gap moves the current line into it and collapsing puts it back", async () => {
+  // Z reveals rows owned by the next hunk; following them would move the selection there and
+  // the next press would grow a different gap. So revealing never moves the current line.
+  test("revealing and folding context leave the current line on its row", async () => {
     const fixture = harness.createExpandableContextFilePair();
     const session = await harness.launchHunk({
       args: ["diff", "--files", fixture.before, fixture.after, "--mode", "unified"],
@@ -303,20 +305,24 @@ describe("PTY current line", () => {
       rows: 16,
     });
 
-    try {
-      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
-      await session.waitIdle({ timeout: 300 });
-      const beforeExpand = await harness.pressAndWaitForText(session, "c", /Draft note/, {
+    const currentRow = async () => {
+      const draft = await harness.pressAndWaitForText(session, "c", /Draft note/, {
         timeout: 5_000,
       });
-      const startRow = /Draft note[^R]*R(\d+)/.exec(beforeExpand)?.[1];
-      expect(startRow).toBeDefined();
       await harness.pressAndWaitForSnapshot(
         session,
         "escape",
         (text) => !text.includes("Draft note"),
         5_000,
       );
+      return /Draft note[^R]*R(\d+)/.exec(draft)?.[1];
+    };
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await session.waitIdle({ timeout: 300 });
+      const startRow = await currentRow();
+      expect(startRow).toBeDefined();
 
       await harness.pressAndWaitForSnapshot(
         session,
@@ -325,31 +331,16 @@ describe("PTY current line", () => {
         5_000,
       );
       await session.waitIdle({ timeout: 500 });
-      const expanded = await harness.pressAndWaitForText(session, "c", /Draft note/, {
-        timeout: 5_000,
-      });
-
-      expect(expanded).toContain("R1 ");
-      expect(lineIndexOf(expanded, "Draft note")).toBe(lineIndexOf(expanded, "hiddenLine01") + 1);
-      await harness.pressAndWaitForSnapshot(
-        session,
-        "escape",
-        (text) => !text.includes("Draft note"),
-        5_000,
-      );
+      expect(await currentRow()).toBe(startRow);
 
       await harness.pressAndWaitForSnapshot(
         session,
-        "z",
+        "x",
         (text) => !text.includes("hiddenLine01"),
         5_000,
       );
       await session.waitIdle({ timeout: 500 });
-      const collapsed = await harness.pressAndWaitForText(session, "c", /Draft note/, {
-        timeout: 5_000,
-      });
-
-      expect(collapsed).toContain(`R${startRow} `);
+      expect(await currentRow()).toBe(startRow);
     } finally {
       session.close();
     }
