@@ -4334,6 +4334,26 @@ describe("UI components", () => {
     expect(gapRows[2]).not.toContain("▲");
   });
 
+  test("DiffSectionBody keeps both gap arrows on a narrow pane by shortening the label", async () => {
+    const { file } = createTwoHunkExpandableDiffFile("gap-narrow");
+    const frame = await captureFrame(
+      <DiffSectionBody
+        file={file}
+        layout="unified"
+        theme={resolveTheme("github-dark-default", null)}
+        width={16}
+        selectedHunkIndex={0}
+        scrollable={false}
+        onGapAction={() => {}}
+      />,
+      16,
+      40,
+    );
+
+    const between = frame.split("\n").find((line) => line.includes("▼") && line.includes("▲"));
+    expect(between).toBeDefined();
+  });
+
   test("DiffSectionBody routes ▼, ▲ and the label of a gap to their reveals", async () => {
     const { file } = createTwoHunkExpandableDiffFile("gap-clicks");
     const actions: GapAction[] = [];

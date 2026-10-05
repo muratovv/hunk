@@ -35,6 +35,8 @@ import { useHighlightedSource } from "./useHighlightedSource";
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const NO_REVEALS: ReadonlyMap<string, ReviewGapReveal> = new Map();
 
+const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
+
 /** Hunks that revealed context themselves: the bottom of the gap above, the top of the one below. */
 function hunksOwningReveals(reveals: ReadonlyMap<string, ReviewGapReveal>) {
   const owners = new Set<number>();
@@ -47,7 +49,6 @@ function hunksOwningReveals(reveals: ReadonlyMap<string, ReviewGapReveal>) {
   }
   return owners;
 }
-const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
 
 export interface ActiveAddNoteAffordance {
   hunkIndex: number;

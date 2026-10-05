@@ -68,6 +68,7 @@ function GapZoneView({
 function gapSeparatorZones(
   row: Extract<PlannedDiffMetaReviewRow["row"], { type: "collapsed" }>,
   theme: AppTheme,
+  width: number,
 ): GapZone[] {
   const gapId = reviewGapId(row.position, row.hunkIndex);
   const hidden = row.newRange[1] - row.newRange[0] + 1;
@@ -104,6 +105,13 @@ function gapSeparatorZones(
       action: { kind: "collapse-gap", gapId },
     });
   }
+  // The arrows and ✕ always fit; only the label gives way on a narrow pane.
+  const label = zones.find((zone) => zone.key === "label")!;
+  const fixedWidth = zones.reduce(
+    (total, zone) => (zone === label ? total : total + measureTextWidth(zone.text)),
+    1,
+  );
+  label.text = fitText(label.text, Math.max(0, width - fixedWidth));
   return zones;
 }
 
@@ -137,7 +145,7 @@ export function DiffMetaRowView({
         <text fg={railFg} bg={theme.panelAlt}>
           {diffRailMarker()}
         </text>
-        {gapSeparatorZones(row, theme).map((zone) => (
+        {gapSeparatorZones(row, theme, width).map((zone) => (
           <GapZoneView key={zone.key} zone={zone} theme={theme} onGapAction={onGapAction} />
         ))}
       </box>
