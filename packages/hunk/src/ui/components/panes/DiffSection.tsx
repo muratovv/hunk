@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { ReviewGapReveal } from "../../../core/review/expansion";
+import type { GapAction } from "../../diff/gapAction";
 import type { DiffFile } from "../../../core/changeset/model";
 import type { LayoutMode } from "../../../core/run/commandInputs";
 import type { UserNoteLineTarget } from "../../../core/liveComments";
@@ -59,7 +60,7 @@ interface DiffSectionProps {
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onRowPlanChange?: (rowPlan: DiffSectionRowPlan, highlighted: boolean) => void;
   onSelect: () => void;
-  onToggleGap: (gapKey: string) => void;
+  onGapAction: (action: GapAction) => void;
 }
 
 /** Render one file section in the main review stream. */
@@ -101,7 +102,7 @@ function DiffSectionComponent({
   onStartUserNoteAtHunk,
   onRowPlanChange,
   onSelect,
-  onToggleGap,
+  onGapAction,
 }: DiffSectionProps) {
   return (
     <box
@@ -209,7 +210,7 @@ function DiffSectionComponent({
           onActiveAddNoteAffordanceChange={onActiveAddNoteAffordanceChange}
           onStartUserNoteAtHunk={onStartUserNoteAtHunk}
           onRowPlanChange={onRowPlanChange}
-          onToggleGap={onToggleGap}
+          onGapAction={onGapAction}
           selectedHunkIndex={selectedHunkIndex}
           sectionGeometry={sectionGeometry}
           shouldLoadHighlight={shouldLoadHighlight}

@@ -5,6 +5,7 @@ import { useKeyboard } from "@opentui/react";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createRef, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { MenuId } from "./chrome/menu";
+import type { GapAction } from "../diff/gapAction";
 import type { AppBootstrap } from "../../core/bootstrap";
 import type { DiffFile } from "../../core/changeset/model";
 import { createTestVcsAppBootstrap } from "../../../../../test/helpers/app-bootstrap";
@@ -238,6 +239,25 @@ function createExpandableContextDiffFile(
   return {
     after,
     file: buildTestDiffFile({ after, before, context: 3, id, path, sourceFetcher }),
+  };
+}
+
+/** Two hunks (lines 10 and 30 of 40) with a leading, a between-hunk and a trailing gap. */
+function createTwoHunkExpandableDiffFile(id: string) {
+  const before = Array.from({ length: 40 }, (_, i) => `line ${i + 1}\n`).join("");
+  const after = before
+    .replace("line 10\n", "line 10 modified\n")
+    .replace("line 30\n", "line 30 modified\n");
+  return {
+    after,
+    file: buildTestDiffFile({
+      after,
+      before,
+      context: 3,
+      id,
+      path: `${id}.ts`,
+      sourceFetcher: createTestSourceFetcher(() => after),
+    }),
   };
 }
 
@@ -3791,7 +3811,8 @@ describe("UI components", () => {
       "1 / 2 / 0                unified / split / auto",
       "s / t                    sidebar / theme selector",
       "a                        toggle AI notes",
-      "z                        toggle unchanged context",
+      "z / Z                    more context above / below",
+      "x                        hide revealed context",
       "l / w / m / M            lines / wrap / metadata / menu",
       "e                        open file in $EDITOR",
       "Review",
@@ -4253,7 +4274,7 @@ describe("UI components", () => {
     expect(binaryFileFrame).toContain("Binary file skipped");
   });
 
-  test("DiffSectionBody shows the expand chevron only when a source fetcher is attached", async () => {
+  test("DiffSectionBody shows gap arrows only when a source fetcher is attached", async () => {
     const { file: baseFile } = createExpandableContextDiffFile("expand-affordance", "expand.ts");
     const theme = resolveTheme("github-dark-default", null);
 
@@ -4270,27 +4291,201 @@ describe("UI components", () => {
       40,
     );
     expect(noFetcherFrame).toContain("unchanged lines");
-    expect(noFetcherFrame).not.toContain("▾");
-
-    const fileWithFetcher = {
-      ...baseFile,
-      sourceFetcher: createTestSourceFetcher(() => null),
-    };
+    expect(noFetcherFrame).not.toContain("▲");
 
     const expandableFrame = await captureFrame(
       <DiffSectionBody
-        file={fileWithFetcher}
+        file={{ ...baseFile, sourceFetcher: createTestSourceFetcher(() => null) }}
         layout="split"
         theme={theme}
         width={120}
         selectedHunkIndex={0}
         scrollable={false}
-        onToggleGap={() => {}}
+        onGapAction={() => {}}
       />,
       120,
       40,
     );
-    expect(expandableFrame).toContain("▾");
+    expect(expandableFrame).toContain("▲");
+  });
+
+  test("DiffSectionBody puts ▲ above the first hunk, ▼ ▲ between hunks and ▼ below the last", async () => {
+    const { file } = createTwoHunkExpandableDiffFile("gap-arrows");
+    const frame = await captureFrame(
+      <DiffSectionBody
+        file={file}
+        layout="unified"
+        theme={resolveTheme("github-dark-default", null)}
+        width={100}
+        selectedHunkIndex={0}
+        scrollable={false}
+        onGapAction={() => {}}
+      />,
+      100,
+      40,
+    );
+
+    const gapRows = frame.split("\n").filter((line) => line.includes("unchanged line"));
+    expect(gapRows).toHaveLength(3);
+    expect(gapRows[0]).toContain("▲");
+    expect(gapRows[0]).not.toContain("▼");
+    expect(gapRows[1]).toMatch(/▼.*13 unchanged lines.*▲/);
+    expect(gapRows[2]).toContain("▼");
+    expect(gapRows[2]).not.toContain("▲");
+  });
+
+  test("DiffSectionBody routes ▼, ▲ and the label of a gap to their reveals", async () => {
+    const { file } = createTwoHunkExpandableDiffFile("gap-clicks");
+    const actions: GapAction[] = [];
+    const setup = await testRender(
+      <DiffSectionBody
+        file={file}
+        layout="unified"
+        theme={resolveTheme("github-dark-default", null)}
+        width={100}
+        selectedHunkIndex={0}
+        scrollable={false}
+        onGapAction={(action) => actions.push(action)}
+      />,
+      { width: 100, height: 40 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      const frameLines = setup.captureCharFrame().split("\n");
+      const y = frameLines.findIndex((line) => line.includes("13 unchanged lines"));
+      const row = frameLines[y]!;
+      for (const x of [row.indexOf("▼"), row.indexOf("▲"), row.indexOf("13 unchanged")]) {
+        await act(async () => {
+          await setup.mockMouse.click(x, y);
+        });
+      }
+
+      expect(actions).toEqual([
+        { kind: "reveal", gapId: "before:1", edge: "top" },
+        { kind: "reveal", gapId: "before:1", edge: "bottom" },
+        { kind: "reveal", gapId: "before:1", edge: "top", lines: 13 },
+      ]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffSectionBody offers ✕ on a partly revealed gap and on the hunk that revealed it", async () => {
+    const { file, after } = createTwoHunkExpandableDiffFile("gap-collapse");
+    const actions: GapAction[] = [];
+    const setup = await testRender(
+      <DiffSectionBody
+        file={file}
+        layout="unified"
+        theme={resolveTheme("github-dark-default", null)}
+        width={100}
+        selectedHunkIndex={0}
+        scrollable={false}
+        showHunkHeaders
+        gapReveals={new Map([["before:1", { top: 0, bottom: 2 }]])}
+        sourceStatus={{ kind: "loaded", text: after }}
+        onGapAction={(action) => actions.push(action)}
+      />,
+      { width: 100, height: 40 },
+    );
+
+    try {
+      await act(async () => {
+        await setup.renderOnce();
+      });
+      const frameLines = setup.captureCharFrame().split("\n");
+      const gapY = frameLines.findIndex((line) => line.includes("11 unchanged lines"));
+      // The second hunk's header: hunk 1 owns the bottom edge it revealed.
+      const headerY = frameLines.findLastIndex((line) => line.includes("@@"));
+      expect(frameLines[gapY]).toContain("✕");
+      expect(frameLines[headerY]).toContain("✕");
+      expect(frameLines.filter((line) => line.includes("@@") && line.includes("✕"))).toHaveLength(
+        1,
+      );
+
+      await act(async () => {
+        await setup.mockMouse.click(frameLines[gapY]!.indexOf("✕"), gapY);
+      });
+      await act(async () => {
+        await setup.mockMouse.click(frameLines[headerY]!.indexOf("✕"), headerY);
+      });
+
+      expect(actions).toEqual([
+        { kind: "collapse-gap", gapId: "before:1" },
+        { kind: "collapse-hunk", hunkIndex: 1 },
+      ]);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("DiffSectionBody asks for a partial file's source so its trailing gap can be sized", async () => {
+    const { file } = createTwoHunkExpandableDiffFile("gap-prefetch");
+    const partial = { ...file, metadata: { ...file.metadata, isPartial: true } };
+    const actions: GapAction[] = [];
+    const render = (sourceStatus?: { kind: "loading" }) =>
+      captureFrame(
+        <DiffSectionBody
+          file={partial}
+          layout="unified"
+          theme={resolveTheme("github-dark-default", null)}
+          width={100}
+          selectedHunkIndex={0}
+          scrollable={false}
+          sourceStatus={sourceStatus}
+          onGapAction={(action) => actions.push(action)}
+        />,
+        100,
+        40,
+      );
+
+    await render({ kind: "loading" });
+    expect(actions).toEqual([]);
+    await render();
+    expect(actions).toEqual([{ kind: "load-source" }]);
+  });
+
+  test("DiffSectionBody draws gap arrows in the theme's full-contrast text colour", async () => {
+    for (const themeId of ["catppuccin-mocha", "night-owl"]) {
+      const theme = resolveTheme(themeId, null);
+      const { file } = createTwoHunkExpandableDiffFile(`gap-contrast-${themeId}`);
+      const setup = await testRender(
+        <DiffSectionBody
+          file={file}
+          layout="unified"
+          theme={theme}
+          width={100}
+          selectedHunkIndex={0}
+          scrollable={false}
+          onGapAction={() => {}}
+        />,
+        { width: 100, height: 40 },
+      );
+      try {
+        await act(async () => {
+          await setup.renderOnce();
+        });
+        const arrows = setup
+          .captureSpans()
+          .lines.flatMap((line) => line.spans)
+          .filter((span) => span.text.includes("▼") || span.text.includes("▲"));
+        expect(arrows.length).toBeGreaterThan(0);
+        for (const span of arrows) {
+          expect(capturedTestColorToHex(span.fg)?.toLowerCase()).toBe(theme.text.toLowerCase());
+        }
+      } finally {
+        await act(async () => {
+          setup.renderer.destroy();
+        });
+      }
+    }
   });
 
   test("DiffSectionBody hides add-note affordances on collapsed and hunk-header rows", async () => {
@@ -4309,7 +4504,7 @@ describe("UI components", () => {
         selectedHunkIndex={0}
         scrollable={false}
         onStartUserNoteAtHunk={() => {}}
-        onToggleGap={() => {}}
+        onGapAction={() => {}}
       />,
       { width: 120, height: 40 },
     );
@@ -4357,60 +4552,6 @@ describe("UI components", () => {
         }
       }
       expect(codeHoverFrame).toContain("[+]");
-    } finally {
-      await act(async () => {
-        setup.renderer.destroy();
-      });
-    }
-  });
-
-  test("DiffSectionBody toggles a collapsed gap when clicked", async () => {
-    const expandable = createExpandableContextDiffFile("expand-click", "expand-click.ts");
-    const file = {
-      ...expandable.file,
-      sourceFetcher: createTestSourceFetcher(() => expandable.after),
-    };
-    const toggledGaps: string[] = [];
-    const theme = resolveTheme("github-dark-default", null);
-    const setup = await testRender(
-      <DiffSectionBody
-        file={file}
-        layout="split"
-        theme={theme}
-        width={120}
-        selectedHunkIndex={0}
-        scrollable={false}
-        onToggleGap={(gapKey) => {
-          toggledGaps.push(gapKey);
-        }}
-      />,
-      { width: 120, height: 40 },
-    );
-
-    try {
-      await act(async () => {
-        await setup.renderOnce();
-      });
-
-      const frame = setup.captureCharFrame();
-      const gapLineIndex = frame.split("\n").findIndex((line) => line.includes("▾"));
-      expect(gapLineIndex).toBeGreaterThanOrEqual(0);
-
-      for (const y of [gapLineIndex, gapLineIndex + 1]) {
-        for (const x of [2, 8, 24]) {
-          await act(async () => {
-            await setup.mockMouse.click(x, y);
-          });
-          if (toggledGaps.length > 0) {
-            break;
-          }
-        }
-        if (toggledGaps.length > 0) {
-          break;
-        }
-      }
-
-      expect(toggledGaps).toEqual(["before:0"]);
     } finally {
       await act(async () => {
         setup.renderer.destroy();

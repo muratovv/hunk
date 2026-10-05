@@ -989,7 +989,7 @@ describe("expansion/toggle", () => {
     });
 
     expect(plan.actions).toEqual([
-      { type: "expansion/set", fileKey: "alpha", gapId: "before:1", top: 9, bottom: 0 },
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:1", top: 0, bottom: 9 },
     ]);
     expect(plan.outcome).toEqual({
       type: "expansion/toggled",

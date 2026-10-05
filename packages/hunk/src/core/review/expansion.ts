@@ -47,6 +47,9 @@ export interface ReviewGapAddress {
   lineCount: number;
 }
 
+/** Lines one ▲ / ▼ press reveals (GitHub's step). */
+export const REVIEW_GAP_REVEAL_STEP = 20;
+
 /** Which edge of a gap a reveal grows from: `top` borders the hunk above, `bottom` the one below. */
 export type ReviewGapEdge = "top" | "bottom";
 

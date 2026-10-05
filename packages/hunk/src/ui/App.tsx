@@ -1313,6 +1313,8 @@ export function App({
         toggleCopyDecorations,
         toggleFocusArea,
         toggleGapForSelectedHunk: review.toggleSelectedHunkGap,
+        revealHunkContext: review.revealSelectedHunkContext,
+        collapseHunkContext: review.collapseSelectedHunkContext,
         toggleHelp,
         toggleHunkHeaders,
         toggleLineNumbers,
@@ -1689,7 +1691,7 @@ export function App({
             onCopyFeedback={showTransientNotice}
             onFileViewRowFailure={reportFileViewRowFailure}
             onSelectFile={jumpToFile}
-            onToggleGap={review.toggleGap}
+            onGapAction={review.gapAction}
             onViewportCenteredHunkChange={(fileId, hunkIndex) =>
               review.anchorSelection(fileId, hunkIndex)
             }

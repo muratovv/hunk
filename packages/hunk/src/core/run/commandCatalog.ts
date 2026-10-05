@@ -33,7 +33,9 @@ import {
   selectActiveReplyableReviewNoteId,
   selectNormalizedSelection,
   selectReviewGapForSelection,
+  selectReviewGapsAroundSelection,
 } from "../review/selectors";
+import { REVIEW_GAP_REVEAL_STEP } from "../review/expansion";
 import type { ReviewState } from "../review/state";
 import type { ReviewNoteTargetV1 } from "../review/types";
 
@@ -65,7 +67,11 @@ export type AppCommandReviewEffect =
   /** Delete or dismiss the active stored leaf note. */
   | { kind: "notes/remove-active" }
   /** Flip the gap the shared policy says this selection reaches. */
-  | { kind: "expansion/toggle-selected-gap" };
+  | { kind: "expansion/toggle-selected-gap" }
+  /** Reveal one step of the gap above or below the selected hunk, growing from that hunk. */
+  | { kind: "expansion/reveal-around-selected"; direction: "above" | "below" }
+  /** Fold back what the selected hunk revealed. */
+  | { kind: "expansion/collapse-selected-hunk" };
 
 export interface AppCommandCatalogEntry {
   /** Stable canonical identifier, `hunk.<category>.<name>` for every built-in. */
@@ -496,9 +502,39 @@ const BUILTIN_COMMANDS = [
     id: "hunk.review.toggleHunkGap",
     title: "Expand or collapse context for the selected hunk",
     category: "review",
-    defaultKeys: ["z"],
+    defaultKeys: [],
     locus: "semantic",
     review: { kind: "expansion/toggle-selected-gap" },
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.expandAboveHunk",
+    title: "Show more lines above the selected hunk",
+    category: "review",
+    defaultKeys: ["z"],
+    locus: "semantic",
+    review: { kind: "expansion/reveal-around-selected", direction: "above" },
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.expandBelowHunk",
+    title: "Show more lines below the selected hunk",
+    category: "review",
+    defaultKeys: ["Z"],
+    locus: "semantic",
+    review: { kind: "expansion/reveal-around-selected", direction: "below" },
+    publicToExtensions: true,
+    closesMenu: true,
+  },
+  {
+    id: "hunk.review.collapseHunkContext",
+    title: "Hide the context the selected hunk revealed",
+    category: "review",
+    defaultKeys: ["x"],
+    locus: "semantic",
+    review: { kind: "expansion/collapse-selected-hunk" },
     publicToExtensions: true,
     closesMenu: true,
   },
@@ -712,6 +748,24 @@ export function lowerAppCommandToReviewIntent(
     case "expansion/toggle-selected-gap": {
       const target = selectReviewGapForSelection(state);
       return target ? { type: "expansion/toggle", ...target } : undefined;
+    }
+    case "expansion/reveal-around-selected": {
+      const around = selectReviewGapsAroundSelection(state);
+      const { direction } = entry.review;
+      const gapId = direction === "above" ? around?.above : around?.below;
+      if (!around || !gapId) return undefined;
+      // Above the hunk the gap grows up from its bottom edge; below it, down from its top.
+      return {
+        type: "expansion/reveal",
+        fileKey: around.fileKey,
+        gapId,
+        edge: direction === "above" ? "bottom" : "top",
+        lines: REVIEW_GAP_REVEAL_STEP,
+      };
+    }
+    case "expansion/collapse-selected-hunk": {
+      const { fileKey, hunkIndex } = selectNormalizedSelection(state);
+      return fileKey ? { type: "expansion/collapse-hunk", fileKey, hunkIndex } : undefined;
     }
     case undefined:
       return undefined;

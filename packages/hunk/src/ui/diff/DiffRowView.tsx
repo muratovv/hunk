@@ -1,4 +1,5 @@
 /** Dispatches planned diff rows to their focused mounted row views. */
+import type { GapAction } from "./gapAction";
 import { memo } from "react";
 import type { UserNoteLineTarget } from "../../core/liveComments";
 import type { CopySelectedRowRange } from "../lib/diffSpatial";
@@ -33,7 +34,8 @@ export interface DiffRowViewProps {
   showAddNoteBadge?: boolean;
   onHoverRow?: (rowKey: string) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
-  onToggleGap?: (gapKey: string) => void;
+  onGapAction?: (action: GapAction) => void;
+  hunkHasRevealedContext?: boolean;
 }
 
 /** Reject a planned row variant that lacks a mounted row view. */
@@ -65,7 +67,8 @@ export const DiffRowView = memo(function DiffRowViewComponent({
   showAddNoteBadge,
   onHoverRow,
   onStartUserNoteAtHunk,
-  onToggleGap,
+  onGapAction,
+  hunkHasRevealedContext,
 }: DiffRowViewProps) {
   if (isPlannedDiffMetaReviewRow(plannedRow)) {
     return (
@@ -78,7 +81,8 @@ export const DiffRowView = memo(function DiffRowViewComponent({
         showAddNoteBadge={showAddNoteBadge}
         onHoverRow={onHoverRow}
         onStartUserNoteAtHunk={onStartUserNoteAtHunk}
-        onToggleGap={onToggleGap}
+        onGapAction={onGapAction}
+        hunkHasRevealedContext={hunkHasRevealedContext}
       />
     );
   }

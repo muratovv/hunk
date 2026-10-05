@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_HUNK_GAP } from "../../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
 import type { DiffFile } from "../../core/changeset/model";
-import type { ReviewGapReveal } from "../../core/review/expansion";
+import { parseReviewGapId, type ReviewGapReveal } from "../../core/review/expansion";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type { UserNoteLineTarget } from "../../core/liveComments";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
@@ -18,6 +18,7 @@ import type { DiffSectionGeometry } from "./diffSectionGeometry";
 import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
 import { type FileSourceStatus } from "./expandCollapsedRows";
+import type { GapAction } from "./gapAction";
 import { buildLineHighlightPaintIndex } from "./lineHighlightPaint";
 import type { ValidatedLineHighlight } from "../highlights/validate";
 import { spansForHighlightedSourceLine, type DiffRow } from "./diffRows";
@@ -33,6 +34,19 @@ import { useHighlightedSource } from "./useHighlightedSource";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 const NO_REVEALS: ReadonlyMap<string, ReviewGapReveal> = new Map();
+
+/** Hunks that revealed context themselves: the bottom of the gap above, the top of the one below. */
+function hunksOwningReveals(reveals: ReadonlyMap<string, ReviewGapReveal>) {
+  const owners = new Set<number>();
+  for (const [gapId, reveal] of reveals) {
+    const gap = parseReviewGapId(gapId);
+    if (!gap) continue;
+    const above = gap.position === "trailing" ? gap.hunkIndex : gap.hunkIndex - 1;
+    if (reveal.top > 0 && above >= 0) owners.add(above);
+    if (reveal.bottom > 0 && gap.position === "before") owners.add(gap.hunkIndex);
+  }
+  return owners;
+}
 const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
 
 export interface ActiveAddNoteAffordance {
@@ -69,7 +83,7 @@ export function DiffSectionBody({
   onActiveAddNoteAffordanceChange,
   onStartUserNoteAtHunk,
   onRowPlanChange,
-  onToggleGap,
+  onGapAction,
   showLineNumbers = true,
   showHunkHeaders = true,
   sourceStatus,
@@ -102,7 +116,7 @@ export function DiffSectionBody({
   onActiveAddNoteAffordanceChange?: (affordance: ActiveAddNoteAffordance | null) => void;
   onStartUserNoteAtHunk?: (hunkIndex: number, target?: UserNoteLineTarget) => void;
   onRowPlanChange?: (rowPlan: DiffSectionRowPlan, highlighted: boolean) => void;
-  onToggleGap?: (gapKey: string) => void;
+  onGapAction?: (action: GapAction) => void;
   showLineNumbers?: boolean;
   showHunkHeaders?: boolean;
   sourceStatus?: FileSourceStatus | undefined;
@@ -134,8 +148,8 @@ export function DiffSectionBody({
   onActiveAddNoteAffordanceChangeRef.current = onActiveAddNoteAffordanceChange;
   const onStartUserNoteAtHunkRef = useRef(onStartUserNoteAtHunk);
   onStartUserNoteAtHunkRef.current = onStartUserNoteAtHunk;
-  const onToggleGapRef = useRef(onToggleGap);
-  onToggleGapRef.current = onToggleGap;
+  const onGapActionRef = useRef(onGapAction);
+  onGapActionRef.current = onGapAction;
 
   const clearHoverIdleTimeout = useCallback(() => {
     if (hoverIdleTimeoutRef.current) {
@@ -259,8 +273,21 @@ export function DiffSectionBody({
 
   // Stable wrappers around the unstable upstream handlers. Presence/absence still mirrors the
   // incoming props so rows keep hiding affordances when the handlers are not provided.
-  const stableToggleGap = useCallback((gapKey: string) => onToggleGapRef.current?.(gapKey), []);
-  const gapToggleHandler = fileHasSourceFetcher && onToggleGap ? stableToggleGap : undefined;
+  const stableGapAction = useCallback((action: GapAction) => onGapActionRef.current?.(action), []);
+  const gapActionHandler = fileHasSourceFetcher && onGapAction ? stableGapAction : undefined;
+  const hunksWithRevealedContext = useMemo(() => hunksOwningReveals(gapReveals), [gapReveals]);
+
+  // Only a mounted section asks, so a large review fetches what the reader is near.
+  const needsTrailingGapSize =
+    gapActionHandler !== undefined &&
+    sourceStatus === undefined &&
+    Boolean(file?.metadata.isPartial) &&
+    (file?.metadata.hunks.length ?? 0) > 0;
+  useEffect(() => {
+    if (needsTrailingGapSize) {
+      onGapActionRef.current?.({ kind: "load-source" });
+    }
+  }, [needsTrailingGapSize]);
   const stableStartUserNoteAtHunk = useCallback(
     (hunkIndex: number, target?: UserNoteLineTarget) =>
       onStartUserNoteAtHunkRef.current?.(hunkIndex, target),
@@ -444,7 +471,11 @@ export function DiffSectionBody({
               }
               onHoverRow={handleHoverRow}
               onStartUserNoteAtHunk={startUserNoteAtHunkHandler}
-              onToggleGap={gapToggleHandler}
+              onGapAction={gapActionHandler}
+              hunkHasRevealedContext={
+                plannedRow.row.type === "hunk-header" &&
+                hunksWithRevealedContext.has(plannedRow.row.hunkIndex)
+              }
             />
           </box>
         );

@@ -673,14 +673,18 @@ function planExpansionToggle(
   const file = requireReviewFile(state, intent.fileKey);
   const address = requireGapAddress(state, file, intent.gapId);
   const expanded = !isReviewGapExpanded(state, file.key, intent.gapId);
+  // A leading gap is its hunk's context, so the whole of it is that hunk's (bottom) edge;
+  // only the trailing gap has no hunk below and belongs to the one above.
+  const edge: ReviewGapEdge = address.position === "trailing" ? "top" : "bottom";
   return {
     actions: [
       {
         type: "expansion/set",
         fileKey: file.key,
         gapId: intent.gapId,
-        top: expanded ? address.lineCount : 0,
+        top: 0,
         bottom: 0,
+        ...(expanded ? { [edge]: address.lineCount } : {}),
       },
     ],
     outcome: {

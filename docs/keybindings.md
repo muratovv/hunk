@@ -118,10 +118,13 @@ Review and shared commands:
 | `hunk.review.alignCurrentLineCenter`           | Center current line in viewport                | _(none)_                     |
 | `hunk.review.alignCurrentLineTop`              | Align current line to viewport top             | _(none)_                     |
 | `hunk.review.clearSelection`                   | Clear the active visual selection              | _(none)_                     |
+| `hunk.review.collapseHunkContext`              | Hide the context the selected hunk revealed    | `x`                          |
 | `hunk.review.copySelection`                    | Copy the active visual selection               | `y`                          |
 | `hunk.review.deleteActiveNote`                 | Delete active review note                      | `D`                          |
 | `hunk.review.editActiveNote`                   | Edit active review note                        | `E`                          |
 | `hunk.review.editSelectedFile`                 | Open the selected file in your editor          | `e`                          |
+| `hunk.review.expandAboveHunk`                  | Show more lines above the selected hunk        | `z`                          |
+| `hunk.review.expandBelowHunk`                  | Show more lines below the selected hunk        | `Z`                          |
 | `hunk.review.focusFilter`                      | Focus the file filter                          | _(none)_                     |
 | `hunk.review.halfPageDown`                     | Scroll down half a page                        | `d`, `ctrl+d`                |
 | `hunk.review.halfPageUp`                       | Scroll up half a page                          | `u`, `ctrl+u`                |
@@ -146,7 +149,7 @@ Review and shared commands:
 | `hunk.review.startVisualSelection`             | Start visual line selection                    | `v`                          |
 | `hunk.review.stepDown`                         | Move down one line or note                     | `down`, `j`                  |
 | `hunk.review.stepUp`                           | Move up one line or note                       | `up`, `k`                    |
-| `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | `z`                          |
+| `hunk.review.toggleHunkGap`                    | Expand or collapse the selected context        | _(none)_                     |
 | `hunk.search.find`                             | Search diff content                            | `/`                          |
 | `hunk.search.next`                             | Next search match                              | `n`                          |
 | `hunk.search.previous`                         | Previous search match                          | `N`                          |

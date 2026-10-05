@@ -1,5 +1,6 @@
 import { type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
 import type { ReviewGapReveal } from "../../../core/review/expansion";
+import type { GapAction } from "../../diff/gapAction";
 import { useRenderer } from "@opentui/react";
 import {
   useCallback,
@@ -312,7 +313,7 @@ const NO_REVEALS_BY_FILE_ID: Record<string, ReadonlyMap<string, ReviewGapReveal>
 const EMPTY_FILE_VIEWS: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
 const EMPTY_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> = new Map();
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
-const NOOP_TOGGLE_GAP = () => {};
+const NOOP_GAP_ACTION = () => {};
 
 /** Render the main multi-file review stream. */
 export function DiffPane({
@@ -384,7 +385,7 @@ export function DiffPane({
   onFileViewRowFailure,
   onScrollCodeHorizontally = () => {},
   onSelectFile,
-  onToggleGap = NOOP_TOGGLE_GAP,
+  onGapAction = NOOP_GAP_ACTION,
   onLineCursorsChange,
   onReviewVerticalStopsChange,
   currentLinePaintRequested = false,
@@ -473,7 +474,7 @@ export function DiffPane({
   onFileViewRowFailure?: (failure: FileViewRowFailure) => void;
   onScrollCodeHorizontally?: (delta: number) => void;
   onSelectFile: (fileId: string) => void;
-  onToggleGap?: (fileId: string, gapKey: string) => void;
+  onGapAction?: (fileId: string, action: GapAction) => void;
   onLineCursorsChange?: (cursors: LineCursor[]) => void;
   onReviewVerticalStopsChange?: (stops: ReviewVerticalStop[]) => void;
   currentLinePaintRequested?: boolean;
@@ -2658,7 +2659,7 @@ export function DiffPane({
                             : undefined
                         }
                         onSelect={selectFileCallback(file.id)}
-                        onToggleGap={(gapKey) => onToggleGap(file.id, gapKey)}
+                        onGapAction={(action) => onGapAction(file.id, action)}
                       />
                     );
                   })}

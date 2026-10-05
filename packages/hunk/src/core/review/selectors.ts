@@ -11,6 +11,7 @@ import {
   reviewExpansionSide,
   reviewGapId,
   reviewGapSourceForFile,
+  reviewGapsAroundHunk,
   type ReviewGapReveal,
   type ReviewGapSource,
   reviewLeadingGap,
@@ -646,6 +647,28 @@ export function selectReviewGapSource(
         },
       }
     : gapSource;
+}
+
+/**
+ * The gaps bordering the selected hunk, addressed the way expansion intents name them.
+ *
+ * Undefined when the selection has no file, no hunks, or no expandable source behind it.
+ */
+export function selectReviewGapsAroundSelection(
+  state: Pick<ReviewState, "document" | "filter" | "selection" | "sourceStatusByFileKey">,
+): { fileKey: string; above?: string; below?: string } | undefined {
+  const { fileKey, hunkIndex } = selectNormalizedSelection(state);
+  const file = selectReviewFileByKey(state, fileKey);
+  if (!file || file.sourceIdentity === undefined || file.hunks.length === 0) {
+    return undefined;
+  }
+
+  const { above, below } = reviewGapsAroundHunk(selectReviewGapSource(state, file), hunkIndex);
+  return {
+    fileKey: file.key,
+    ...(above ? { above: reviewGapId(above.position, above.hunkIndex) } : {}),
+    ...(below ? { below: reviewGapId(below.position, below.hunkIndex) } : {}),
+  };
 }
 
 /** Select the revealed lines of every gap, grouped by file, for files that have any. */
