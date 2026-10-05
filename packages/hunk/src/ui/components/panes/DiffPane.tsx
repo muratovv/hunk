@@ -1,4 +1,5 @@
 import { type MouseEvent as TuiMouseEvent, type ScrollBoxRenderable } from "@opentui/core";
+import type { ReviewGapReveal } from "../../../core/review/expansion";
 import { useRenderer } from "@opentui/react";
 import {
   useCallback,
@@ -306,8 +307,8 @@ function buildHighlightPrefetchFileIds({
   return next;
 }
 
-const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
-const EMPTY_EXPANDED_GAPS_BY_FILE_ID: Record<string, ReadonlySet<string>> = {};
+const NO_REVEALS: ReadonlyMap<string, ReviewGapReveal> = new Map();
+const NO_REVEALS_BY_FILE_ID: Record<string, ReadonlyMap<string, ReviewGapReveal>> = {};
 const EMPTY_FILE_VIEWS: ReadonlyMap<string, ResolvedFileViewLayout> = new Map();
 const EMPTY_LINE_HIGHLIGHTS: ReadonlyMap<string, readonly ValidatedLineHighlight[]> = new Map();
 const EMPTY_SOURCE_STATUS_BY_FILE_ID: Record<string, FileSourceStatus> = {};
@@ -317,7 +318,7 @@ const NOOP_TOGGLE_GAP = () => {};
 export function DiffPane({
   codeHorizontalOffset = 0,
   diffContentWidth,
-  expandedGapsByFileId = EMPTY_EXPANDED_GAPS_BY_FILE_ID,
+  gapRevealsByFileId = NO_REVEALS_BY_FILE_ID,
   fileViews = EMPTY_FILE_VIEWS,
   files,
   semanticFileIdentities,
@@ -393,7 +394,7 @@ export function DiffPane({
 }: {
   codeHorizontalOffset?: number;
   diffContentWidth: number;
-  expandedGapsByFileId?: Record<string, ReadonlySet<string>>;
+  gapRevealsByFileId?: Record<string, ReadonlyMap<string, ReviewGapReveal>>;
   /** Validated alternate layouts, keyed by file id; raw Pierre remains the fallback. */
   fileViews?: ReadonlyMap<string, ResolvedFileViewLayout>;
   files: DiffFile[];
@@ -1114,7 +1115,7 @@ export function DiffPane({
           diffContentWidth,
           showLineNumbers,
           wrapLines,
-          expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
+          gapRevealsByFileId[file.id] ?? NO_REVEALS,
           sourceStatusByFileId[file.id],
           reserveAddNoteColumn,
           tabWidth,
@@ -1123,7 +1124,7 @@ export function DiffPane({
       }),
     [
       diffContentWidth,
-      expandedGapsByFileId,
+      gapRevealsByFileId,
       fileViewRenderPlans,
       files,
       hunkGap,
@@ -1162,7 +1163,7 @@ export function DiffPane({
           diffContentWidth,
           showLineNumbers,
           wrapLines,
-          expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS,
+          gapRevealsByFileId[file.id] ?? NO_REVEALS,
           sourceStatusByFileId[file.id],
           reserveAddNoteColumn,
           tabWidth,
@@ -1173,7 +1174,7 @@ export function DiffPane({
       allAgentNotesByFile,
       baseSectionGeometry,
       diffContentWidth,
-      expandedGapsByFileId,
+      gapRevealsByFileId,
       fileViewRenderPlans,
       files,
       hunkGap,
@@ -2602,7 +2603,7 @@ export function DiffPane({
                       <DiffSection
                         key={file.id}
                         codeHorizontalOffset={codeHorizontalOffset}
-                        expandedGapKeys={expandedGapsByFileId[file.id] ?? EMPTY_EXPANDED_GAP_KEYS}
+                        gapReveals={gapRevealsByFileId[file.id] ?? NO_REVEALS}
                         extensionLineHighlights={lineHighlights.get(file.id)}
                         file={file}
                         fileView={fileViewRenderPlans.get(file.id)?.fileView}

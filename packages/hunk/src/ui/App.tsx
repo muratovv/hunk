@@ -1627,7 +1627,7 @@ export function App({
             codeHorizontalOffset={codeHorizontalOffset}
             copyDecorations={copyDecorations}
             diffContentWidth={diffContentWidth}
-            expandedGapsByFileId={review.expandedGapsByFileId}
+            gapRevealsByFileId={review.gapRevealsByFileId}
             fileViews={fileViewLayouts}
             files={filteredFiles}
             semanticFileIdentities={semanticFileIdentities}

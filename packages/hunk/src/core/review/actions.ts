@@ -40,5 +40,6 @@ export type ReviewAction =
   | { type: "draft/save"; note: ReviewStoredNote }
   /** Replace one saved user note in place and retire its edit draft in one revision. */
   | { type: "draft/save-edit"; note: ReviewStoredNote }
-  | { type: "expansion/toggle"; fileKey: string; gapId: string; expanded: boolean }
+  /** Record how many lines of one gap are revealed from each edge; zero on both forgets it. */
+  | { type: "expansion/set"; fileKey: string; gapId: string; top: number; bottom: number }
   | { type: "expansion/set-source-status"; fileKey: string; status: ReviewSourceStatus };

@@ -205,7 +205,7 @@ function TerminalReviewHarness({
     onFirstController?.(controller);
   }
   const visibleFiles = controller.visibleFiles;
-  const { expandedGapsByFileId, sourceStatusByFileId } = controller;
+  const { gapRevealsByFileId, sourceStatusByFileId } = controller;
 
   useEffect(() => {
     if (!publishLineCursors) {
@@ -225,13 +225,13 @@ function TerminalReviewHarness({
             0,
             true,
             false,
-            expandedGapsByFileId[file.id],
+            gapRevealsByFileId[file.id],
             sourceStatusByFileId[file.id],
           ),
         ),
       ),
     );
-  }, [expandedGapsByFileId, publishLineCursors, sourceStatusByFileId, visibleFiles]);
+  }, [gapRevealsByFileId, publishLineCursors, sourceStatusByFileId, visibleFiles]);
 
   useEffect(() => {
     onController(controller);
@@ -1376,7 +1376,7 @@ describe("useTerminalReview", () => {
       });
       await flush(setup);
 
-      const expanded = expectValue(controllerRef.current).expandedGapsByFileId["alpha"];
+      const expanded = expectValue(controllerRef.current).gapRevealsByFileId["alpha"];
       expect(expanded?.has("before:0")).toBe(true);
       const status = expectValue(controllerRef.current).sourceStatusByFileId["alpha"];
       expect(status?.kind).toBe("loaded");
@@ -1390,8 +1390,8 @@ describe("useTerminalReview", () => {
       });
       await flush(setup);
 
-      const reCollapsed = expectValue(controllerRef.current).expandedGapsByFileId["alpha"];
-      expect(reCollapsed?.has("before:0")).toBe(false);
+      const reCollapsed = expectValue(controllerRef.current).gapRevealsByFileId["alpha"];
+      expect(reCollapsed?.has("before:0") ?? false).toBe(false);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1424,8 +1424,8 @@ describe("useTerminalReview", () => {
       await flush(setup);
 
       const controller = expectValue(controllerRef.current);
-      expect(controller.expandedGapsByFileId.alpha?.has("before:0")).toBe(true);
-      expect(controller.expandedGapsByFileId.alpha?.has("before:1")).toBe(true);
+      expect(controller.gapRevealsByFileId.alpha?.has("before:0")).toBe(true);
+      expect(controller.gapRevealsByFileId.alpha?.has("before:1")).toBe(true);
       expect(expectValue(controller.lineCursor).expandedGapKey).toBe("before:1");
     } finally {
       await act(async () => {
@@ -1480,7 +1480,7 @@ describe("useTerminalReview", () => {
       });
       await flush(setup);
 
-      expect(expectValue(controllerRef.current).expandedGapsByFileId["alpha"]).toBeUndefined();
+      expect(expectValue(controllerRef.current).gapRevealsByFileId["alpha"]).toBeUndefined();
       expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
     } finally {
       await act(async () => {
@@ -1561,9 +1561,9 @@ describe("useTerminalReview", () => {
         expectValue(controllerRef.current).toggleSelectedHunkGap();
       });
       await flush(setup);
-      expect([...(expectValue(controllerRef.current).expandedGapsByFileId["alpha"] ?? [])]).toEqual(
-        ["before:1"],
-      );
+      expect([
+        ...(expectValue(controllerRef.current).gapRevealsByFileId["alpha"]?.keys() ?? []),
+      ]).toEqual(["before:1"]);
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1596,7 +1596,7 @@ describe("useTerminalReview", () => {
       });
       await flush(setup);
 
-      const expanded = expectValue(controllerRef.current).expandedGapsByFileId["alpha"];
+      const expanded = expectValue(controllerRef.current).gapRevealsByFileId["alpha"];
       expect(expanded?.has("before:0")).toBe(true);
       expect(sourceFetcher.calls).toEqual(["new"]);
     } finally {
@@ -1779,9 +1779,9 @@ describe("useTerminalReview", () => {
       await flush(setup);
 
       expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]?.kind).toBe("loaded");
-      expect(
-        expectValue(controllerRef.current).expandedGapsByFileId["alpha"]?.has("before:0"),
-      ).toBe(true);
+      expect(expectValue(controllerRef.current).gapRevealsByFileId["alpha"]?.has("before:0")).toBe(
+        true,
+      );
     } finally {
       await act(async () => {
         setup.renderer.destroy();
@@ -1810,9 +1810,9 @@ describe("useTerminalReview", () => {
       if (initialStatus?.kind === "loaded") {
         expect(initialStatus.text).toBe("first\n");
       }
-      expect(
-        expectValue(controllerRef.current).expandedGapsByFileId["alpha"]?.has("before:0"),
-      ).toBe(true);
+      expect(expectValue(controllerRef.current).gapRevealsByFileId["alpha"]?.has("before:0")).toBe(
+        true,
+      );
 
       // Simulate a soft reload: same file, changed content and a fresh fetcher.
       await act(async () => {
@@ -1823,7 +1823,7 @@ describe("useTerminalReview", () => {
       // The stale loaded text and stale expansion must be cleared so the
       // renderer doesn't combine old source with the new patch.
       expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
-      expect(expectValue(controllerRef.current).expandedGapsByFileId["alpha"]).toBeUndefined();
+      expect(expectValue(controllerRef.current).gapRevealsByFileId["alpha"]).toBeUndefined();
 
       // Toggling again now fetches via the new fetcher and reports its text.
       await act(async () => {
@@ -1870,7 +1870,7 @@ describe("useTerminalReview", () => {
       await flush(setup);
 
       expect(expectValue(controllerRef.current).sourceStatusByFileId["alpha"]).toBeUndefined();
-      expect(expectValue(controllerRef.current).expandedGapsByFileId["alpha"]).toBeUndefined();
+      expect(expectValue(controllerRef.current).gapRevealsByFileId["alpha"]).toBeUndefined();
 
       await act(async () => {
         firstLoad.resolve("first\n");

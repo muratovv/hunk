@@ -10,7 +10,8 @@ import { reviewRowId } from "../lib/ids";
 import type { AppTheme } from "../themes";
 import { findMaxLineNumber } from "./codeColumns";
 import { buildDiffSectionRowPlan, type DiffSectionRowPlan } from "./diffSectionRowPlan";
-import { type FileSourceStatus } from "./expandCollapsedRows";
+import type { ReviewGapReveal } from "../../core/review/expansion";
+import { loadedSourceLineCount, type FileSourceStatus } from "./expandCollapsedRows";
 import {
   plannedReviewRowContributesToHunkBounds,
   type PlannedHunkBounds,
@@ -19,7 +20,7 @@ import type { PlannedFileViewRow } from "../fileViews/renderPlan";
 import type { PlannedReviewRow } from "./reviewRenderPlan";
 import { measurePlannedRenderedRowHeight } from "./codeRowLayout";
 
-const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
+const NO_REVEALS: ReadonlyMap<string, ReviewGapReveal> = new Map();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
 export interface DiffSectionRowBounds extends VerticalBounds {
@@ -94,14 +95,19 @@ function notesCacheKey(visibleAgentNotes: VisibleAgentNote[]) {
 
 /** Stable suffix that captures expansion state for the geometry cache key. */
 function expansionCacheKey(
-  expandedKeys: ReadonlySet<string>,
+  reveals: ReadonlyMap<string, ReviewGapReveal>,
   sourceStatus: FileSourceStatus | undefined,
 ) {
-  if (expandedKeys.size === 0) {
-    return "";
+  if (reveals.size === 0) {
+    // Loaded source can still add a partial patch's trailing gap row.
+    const lineCount = loadedSourceLineCount(sourceStatus);
+    return lineCount === undefined ? "" : `:tail:${lineCount}`;
   }
 
-  const sortedKeys = [...expandedKeys].sort().join(",");
+  const sortedKeys = [...reveals]
+    .map(([gapId, reveal]) => `${gapId}=${reveal.top}/${reveal.bottom}`)
+    .sort()
+    .join(",");
   const statusKey =
     sourceStatus === undefined
       ? "pending"
@@ -156,7 +162,7 @@ function setCachedSectionGeometry(
 
 /** Resolve planned rows only for uncommon consumers that need row content after geometry exists. */
 function createLazyPlannedRowsResolver({
-  expandedKeys,
+  reveals,
   file,
   layout,
   showHunkHeaders,
@@ -166,7 +172,7 @@ function createLazyPlannedRowsResolver({
   theme,
   visibleAgentNotes,
 }: {
-  expandedKeys: ReadonlySet<string>;
+  reveals: ReadonlyMap<string, ReviewGapReveal>;
   file: DiffFile;
   layout: Exclude<LayoutMode, "auto">;
   showHunkHeaders: boolean;
@@ -181,7 +187,7 @@ function createLazyPlannedRowsResolver({
   // normally replace these collections; clone only the serializable planning data while preserving
   // note callbacks so later model additions cannot silently fall outside the snapshot boundary.
   const rowPlanInputs = {
-    expandedKeys: expandedKeys.size === 0 ? EMPTY_EXPANDED_GAP_KEYS : new Set(expandedKeys),
+    reveals: reveals.size === 0 ? NO_REVEALS : new Map(reveals),
     file,
     layout,
     showHunkHeaders,
@@ -286,7 +292,7 @@ export function measureDiffSectionGeometry(
   width = 0,
   showLineNumbers = true,
   wrapLines = false,
-  expandedKeys: ReadonlySet<string> = EMPTY_EXPANDED_GAP_KEYS,
+  reveals: ReadonlyMap<string, ReviewGapReveal> = NO_REVEALS,
   sourceStatus: FileSourceStatus | undefined = undefined,
   reserveAddNoteColumn = false,
   tabWidth = DEFAULT_TAB_WIDTH,
@@ -320,7 +326,7 @@ export function measureDiffSectionGeometry(
     theme.lineNumberBg,
     theme.lineNumberFg,
   ].join(":");
-  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${themeCacheKey}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}:tabs:${tabWidth}:hunkGap:${hunkGap}${expansionCacheKey(expandedKeys, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
+  const cacheKey = `${file.id}:${layout}:${showHunkHeaders ? 1 : 0}:${themeCacheKey}:${width}:${showLineNumbers ? 1 : 0}:${wrapLines ? 1 : 0}:${reserveAddNoteColumn ? 1 : 0}:tabs:${tabWidth}:hunkGap:${hunkGap}${expansionCacheKey(reveals, sourceStatus)}${notesCacheKey(visibleAgentNotes)}`;
   const cacheSlot = sectionGeometryCacheSlot(visibleAgentNotes);
   const cached = getCachedSectionGeometry(file, cacheSlot, cacheKey);
   if (cached) {
@@ -328,7 +334,7 @@ export function measureDiffSectionGeometry(
   }
 
   const sectionRowPlan = buildDiffSectionRowPlan({
-    expandedKeys,
+    reveals,
     file,
     layout,
     showHunkHeaders,
@@ -408,7 +414,7 @@ export function measureDiffSectionGeometry(
   }
 
   const resolvePlannedRows = createLazyPlannedRowsResolver({
-    expandedKeys,
+    reveals,
     file,
     layout,
     showHunkHeaders,

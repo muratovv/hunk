@@ -8,12 +8,15 @@
  */
 import { normalizeDiffPath } from "../changeset/diffPaths";
 import {
+  reviewExpansionSide,
   reviewGapId,
   reviewGapSourceForFile,
+  type ReviewGapReveal,
+  type ReviewGapSource,
   reviewLeadingGap,
   reviewTrailingGap,
 } from "./expansion";
-import { reviewCanonicalHunkLine } from "./geometry";
+import { normalizedReviewSourceLines, reviewCanonicalHunkLine } from "./geometry";
 import type { ReviewNavigationFile } from "./navigation";
 import {
   isRenderableStoredReviewNote,
@@ -561,15 +564,13 @@ export function selectActiveRevealNoteId(
   ]);
 }
 
-/** Return whether one collapsed gap is currently expanded. */
+/** Return whether one collapsed gap has any line revealed. */
 export function isReviewGapExpanded(
   state: Pick<ReviewState, "expandedGaps">,
   fileKey: string,
   gapId: string,
 ) {
-  return state.expandedGaps.some(
-    (gap) => gap.fileKey === fileKey && gap.gapId === gapId && gap.expanded,
-  );
+  return state.expandedGaps.some((gap) => gap.fileKey === fileKey && gap.gapId === gapId);
 }
 
 /** One collapsed gap, addressed the way an expansion intent names it. */
@@ -610,18 +611,50 @@ export function selectReviewGapForSelection(
     : undefined;
 }
 
-/** Select the expanded gap ids of every file that currently has any. */
-export function selectExpandedGapIdsByFileKey(
+const NOTHING_REVEALED: ReviewGapReveal = Object.freeze({ top: 0, bottom: 0 });
+
+/** Select what one gap currently reveals from each edge. */
+export function selectReviewGapReveal(
   state: Pick<ReviewState, "expandedGaps">,
-): Record<string, ReadonlySet<string>> {
-  const result: Record<string, Set<string>> = {};
+  fileKey: string,
+  gapId: string,
+): ReviewGapReveal {
+  const gap = state.expandedGaps.find(
+    (entry) => entry.fileKey === fileKey && entry.gapId === gapId,
+  );
+  return gap ? { top: gap.top, bottom: gap.bottom } : NOTHING_REVEALED;
+}
+
+/**
+ * The gap geometry of one file, sized by its expansion source when that has loaded.
+ *
+ * A partial patch's trailing gap only exists once the file's length is known, so every
+ * consumer that has the state resolves gaps through this rather than the file alone.
+ */
+export function selectReviewGapSource(
+  state: Pick<ReviewState, "sourceStatusByFileKey">,
+  file: ReviewFileV1,
+): ReviewGapSource {
+  const gapSource = reviewGapSourceForFile(file);
+  const status = state.sourceStatusByFileKey[file.key];
+  return status?.kind === "loaded"
+    ? {
+        ...gapSource,
+        sourceLines: {
+          side: reviewExpansionSide(file.changeKind),
+          count: normalizedReviewSourceLines(status.text).length,
+        },
+      }
+    : gapSource;
+}
+
+/** Select the revealed lines of every gap, grouped by file, for files that have any. */
+export function selectGapRevealsByFileKey(
+  state: Pick<ReviewState, "expandedGaps">,
+): Record<string, ReadonlyMap<string, ReviewGapReveal>> {
+  const result: Record<string, Map<string, ReviewGapReveal>> = {};
   for (const gap of state.expandedGaps) {
-    const gaps = (result[gap.fileKey] ??= new Set());
-    if (gap.expanded) {
-      gaps.add(gap.gapId);
-    } else {
-      gaps.delete(gap.gapId);
-    }
+    (result[gap.fileKey] ??= new Map()).set(gap.gapId, { top: gap.top, bottom: gap.bottom });
   }
   return result;
 }

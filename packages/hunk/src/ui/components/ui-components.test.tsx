@@ -2154,7 +2154,7 @@ describe("UI components", () => {
       "export const second = 2;\n",
     );
     const files = [firstFile, secondFile];
-    const expandedKeys = new Set(["trailing:0"]);
+    const expandedKeys = new Map([["trailing:0", { top: Number.MAX_SAFE_INTEGER, bottom: 0 }]]);
     const sourceStatus = { kind: "loaded", text: after } as const;
     const firstGeometry = measureDiffSectionGeometry(
       firstFile,
@@ -2177,7 +2177,7 @@ describe("UI components", () => {
     const scrollRef = createRef<ScrollBoxRenderable>();
     const props = createDiffPaneProps(files, theme, {
       diffContentWidth: 88,
-      expandedGapsByFileId: { [firstFile.id]: expandedKeys },
+      gapRevealsByFileId: { [firstFile.id]: expandedKeys },
       headerLabelWidth: 48,
       headerStatsWidth: 16,
       scrollRef,
@@ -2194,7 +2194,9 @@ describe("UI components", () => {
       await settleDiffPane(setup);
 
       let frame = setup.captureCharFrame();
-      expect(frame).toContain("Hide 25 unchanged lines");
+      // A fully revealed gap leaves no separator behind.
+      expect(frame).toContain("4 unchanged lines");
+      expect(frame).not.toContain("25 unchanged lines");
       expect(frame).toContain("first line 6");
       expect(frame).not.toContain("second-after-expanded.ts");
 
@@ -4440,7 +4442,7 @@ describe("UI components", () => {
         theme={theme}
         width={140}
         selectedHunkIndex={0}
-        expandedGapKeys={new Set(["before:0"])}
+        gapReveals={new Map([["before:0", { top: Number.MAX_SAFE_INTEGER, bottom: 0 }]])}
         sourceStatus={{ kind: "loaded", text: after }}
         scrollable={false}
       />,

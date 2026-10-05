@@ -11,6 +11,7 @@ import {
   reviewLeadingGap,
   reviewTrailingGap,
   type ReviewGapAddress,
+  type ReviewGapSource,
 } from "../../core/review/expansion";
 import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
 import type { DiffFile, DiffLineMoveKind } from "../../core/changeset/model";
@@ -688,6 +689,7 @@ export function buildSplitRows(
   highlighted: HighlightedDiffCode | null,
   theme: AppTheme,
   tabWidth = DEFAULT_TAB_WIDTH,
+  trailingSourceLines?: ReviewGapSource["sourceLines"],
 ): DiffRow[] {
   const rows: DiffRow[] = [];
   const deletionLines = highlighted?.deletionLines ?? [];
@@ -795,7 +797,9 @@ export function buildSplitRows(
     }
   }
 
-  const trailingGap = reviewTrailingGap(file.metadata);
+  const trailingGap = reviewTrailingGap(
+    trailingSourceLines ? { ...file.metadata, sourceLines: trailingSourceLines } : file.metadata,
+  );
   if (trailingGap) {
     rows.push(collapsedGapRow(file, trailingGap, "collapsed:"));
   }
@@ -809,6 +813,7 @@ export function buildUnifiedRows(
   highlighted: HighlightedDiffCode | null,
   theme: AppTheme,
   tabWidth = DEFAULT_TAB_WIDTH,
+  trailingSourceLines?: ReviewGapSource["sourceLines"],
 ): DiffRow[] {
   const rows: DiffRow[] = [];
   const deletionLines = highlighted?.deletionLines ?? [];
@@ -909,7 +914,9 @@ export function buildUnifiedRows(
     }
   }
 
-  const trailingGap = reviewTrailingGap(file.metadata);
+  const trailingGap = reviewTrailingGap(
+    trailingSourceLines ? { ...file.metadata, sourceLines: trailingSourceLines } : file.metadata,
+  );
   if (trailingGap) {
     rows.push(collapsedGapRow(file, trailingGap, "unified:collapsed:"));
   }

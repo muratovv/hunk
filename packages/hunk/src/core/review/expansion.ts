@@ -34,6 +34,8 @@ export interface ReviewGapSource {
   additionLines: readonly string[];
   deletionLines: readonly string[];
   isPartial: boolean;
+  /** One side's line total from loaded source; sizes a partial patch's trailing gap. */
+  sourceLines?: { side: ReviewSide; count: number };
 }
 
 export interface ReviewGapAddress {
@@ -43,6 +45,21 @@ export interface ReviewGapAddress {
   newRange: ReviewLineRange;
   /** Rows the gap renders; both sides always span exactly this many lines. */
   lineCount: number;
+}
+
+/** Which edge of a gap a reveal grows from: `top` borders the hunk above, `bottom` the one below. */
+export type ReviewGapEdge = "top" | "bottom";
+
+/** Lines revealed from each edge of one gap; everything between them stays collapsed. */
+export interface ReviewGapReveal {
+  top: number;
+  bottom: number;
+}
+
+/** Fit a reveal into a gap of `lineCount` lines; the top edge wins when the two overlap. */
+export function clampReviewGapReveal(reveal: ReviewGapReveal, lineCount: number): ReviewGapReveal {
+  const top = Math.max(0, Math.min(reveal.top, lineCount));
+  return { top, bottom: Math.max(0, Math.min(reveal.bottom, lineCount - top)) };
 }
 
 /** Build the stable id of one collapsed gap inside a single file. */
@@ -115,7 +132,8 @@ export function reviewLeadingGap(
  *
  * Length comes from what each side's line array has left over once the last hunk is
  * consumed, and the two leftovers must agree because the gap renders as paired rows. A
- * partial patch has no authoritative totals, so it has no trailing gap.
+ * partial patch has no authoritative totals: its trailing gap exists only once a caller
+ * supplies `sourceLines` from loaded source.
  *
  * Known limitation (A2): a last hunk with a zero-count side leaves the two leftovers one
  * apart, so no trailing gap is offered even though the file has unchanged lines after
@@ -125,8 +143,11 @@ export function reviewLeadingGap(
 export function reviewTrailingGap(source: ReviewGapSource): ReviewGapAddress | undefined {
   const hunkIndex = source.hunks.length - 1;
   const hunk = source.hunks[hunkIndex];
-  if (!hunk || source.isPartial) {
+  if (!hunk) {
     return undefined;
+  }
+  if (source.isPartial) {
+    return source.sourceLines ? partialTrailingGap(hunk, hunkIndex, source.sourceLines) : undefined;
   }
 
   const oldCount = source.deletionLines.length - (hunk.deletionLineIndex + hunk.deletionCount);
@@ -146,6 +167,36 @@ export function reviewTrailingGap(source: ReviewGapSource): ReviewGapAddress | u
   };
 }
 
+/**
+ * The tail of a partial patch, sized from one side's loaded source.
+ *
+ * A zero-count side is positioned *at* its last line before the hunk (see
+ * `reviewLeadingGap`), so its tail resumes one line later; the other side follows by the
+ * same offset because unchanged lines pair one to one.
+ */
+function partialTrailingGap(
+  hunk: ReviewGapHunk,
+  hunkIndex: number,
+  sourceLines: NonNullable<ReviewGapSource["sourceLines"]>,
+): ReviewGapAddress | undefined {
+  const nextLine = (start: number, count: number) => start + Math.max(count, 1);
+  const oldStart = nextLine(hunk.deletionStart, hunk.deletionCount);
+  const newStart = nextLine(hunk.additionStart, hunk.additionCount);
+  const start = sourceLines.side === "old" ? oldStart : newStart;
+  const lineCount = sourceLines.count - start + 1;
+  if (lineCount <= 0) {
+    return undefined;
+  }
+
+  return {
+    position: "trailing",
+    hunkIndex,
+    oldRange: [oldStart, oldStart + lineCount - 1],
+    newRange: [newStart, newStart + lineCount - 1],
+    lineCount,
+  };
+}
+
 /** Resolve one gap id against the current geometry, or undefined when it addresses nothing. */
 export function reviewGapAddress(
   source: ReviewGapSource,
@@ -160,6 +211,23 @@ export function reviewGapAddress(
   }
   const trailing = reviewTrailingGap(source);
   return trailing?.hunkIndex === parsed.hunkIndex ? trailing : undefined;
+}
+
+/**
+ * The gaps bordering one hunk: the one above it and the one below it (the next hunk's
+ * leading gap, or the file's trailing gap after the last hunk). The hunk owns the bottom
+ * edge of the first and the top edge of the second.
+ */
+export function reviewGapsAroundHunk(
+  source: ReviewGapSource,
+  hunkIndex: number,
+): { above?: ReviewGapAddress; below?: ReviewGapAddress } {
+  const above = reviewLeadingGap(source, hunkIndex);
+  const below =
+    hunkIndex + 1 < source.hunks.length
+      ? reviewLeadingGap(source, hunkIndex + 1)
+      : reviewTrailingGap(source);
+  return { ...(above ? { above } : {}), ...(below ? { below } : {}) };
 }
 
 /**

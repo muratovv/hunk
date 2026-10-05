@@ -76,6 +76,8 @@ describe("review action round trip", () => {
     { type: "notes/remove-live", noteId: "live:1" },
     { type: "notes/clear", fileKey: FILE_KEY, includeUser: true },
     { type: "expansion/toggle", fileKey: FILE_KEY, gapId: "before:1" },
+    { type: "expansion/reveal", fileKey: FILE_KEY, gapId: "before:1", edge: "bottom", lines: 20 },
+    { type: "expansion/collapse-hunk", fileKey: FILE_KEY, hunkIndex: 1 },
   ];
 
   // Intent: every action type has a worked example, so a new intent that nobody exercised
@@ -107,6 +109,22 @@ describe("review action round trip", () => {
       ok: false,
       reason: "invalid",
     });
+  });
+
+  test("rejects a reveal with an unknown edge or a non-positive line count", () => {
+    for (const bad of [
+      { edge: "left", lines: 20 },
+      { edge: "top", lines: 0 },
+    ]) {
+      expect(
+        parseHunkReviewAction({
+          type: "expansion/reveal",
+          fileKey: FILE_KEY,
+          gapId: "before:1",
+          ...bad,
+        }),
+      ).toEqual({ ok: false, reason: "invalid" });
+    }
   });
 
   test("rejects a scope outside the navigable ones", () => {

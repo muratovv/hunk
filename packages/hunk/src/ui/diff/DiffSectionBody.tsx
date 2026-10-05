@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_HUNK_GAP } from "../../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
 import type { DiffFile } from "../../core/changeset/model";
+import type { ReviewGapReveal } from "../../core/review/expansion";
 import type { LayoutMode } from "../../core/run/commandInputs";
 import type { UserNoteLineTarget } from "../../core/liveComments";
 import { AgentInlineNote } from "../components/panes/AgentInlineNote";
@@ -31,7 +32,7 @@ import { useHighlightedDiff } from "./useHighlightedDiff";
 import { useHighlightedSource } from "./useHighlightedSource";
 
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
-const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
+const NO_REVEALS: ReadonlyMap<string, ReviewGapReveal> = new Map();
 const ADD_NOTE_IDLE_HIDE_DELAY_MS = 2000;
 
 export interface ActiveAddNoteAffordance {
@@ -60,7 +61,7 @@ export function DiffSectionBody({
   copySelectedRowRanges,
   copySelectedSide,
   cursorHighlight,
-  expandedGapKeys = EMPTY_EXPANDED_GAP_KEYS,
+  gapReveals = NO_REVEALS,
   extensionLineHighlights,
   file,
   layout,
@@ -92,7 +93,7 @@ export function DiffSectionBody({
   copySelectedSide?: "left" | "right";
   /** The current line within this file, when the review-stream cursor rests in it. */
   cursorHighlight?: CursorHighlight;
-  expandedGapKeys?: ReadonlySet<string>;
+  gapReveals?: ReadonlyMap<string, ReviewGapReveal>;
   /** Validated extension marks for this file, in source coordinates. */
   extensionLineHighlights?: readonly ValidatedLineHighlight[];
   file: DiffFile | undefined;
@@ -187,13 +188,13 @@ export function DiffSectionBody({
     shouldLoadHighlight,
   });
   const sourceTextForHighlight =
-    sourceStatus?.kind === "loaded" && expandedGapKeys.size > 0 ? sourceStatus.text : undefined;
+    sourceStatus?.kind === "loaded" && gapReveals.size > 0 ? sourceStatus.text : undefined;
   const resolvedHighlightedSource = useHighlightedSource({
     file,
     offloadLargeDiff,
     text: sourceTextForHighlight,
     theme,
-    shouldLoadHighlight: shouldLoadHighlight && expandedGapKeys.size > 0,
+    shouldLoadHighlight: shouldLoadHighlight && gapReveals.size > 0,
   });
   const sourceLineSpans = useCallback(
     (line: string | undefined, sourceLineNumber: number) =>
@@ -204,7 +205,7 @@ export function DiffSectionBody({
   const sectionRowPlan = useMemo(
     () =>
       buildDiffSectionRowPlan({
-        expandedKeys: expandedGapKeys,
+        reveals: gapReveals,
         file,
         highlightedDiff: resolvedHighlighted,
         layout,
@@ -217,7 +218,7 @@ export function DiffSectionBody({
         visibleAgentNotes,
       }),
     [
-      expandedGapKeys,
+      gapReveals,
       file,
       layout,
       resolvedHighlighted,

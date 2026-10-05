@@ -159,7 +159,7 @@ describe("buildLineCursors", () => {
       120,
       true,
       false,
-      new Set([reviewGapId("before", 0)]),
+      new Map([[reviewGapId("before", 0), { top: Number.MAX_SAFE_INTEGER, bottom: 0 }]]),
       { kind: "loaded", text: source },
     );
 

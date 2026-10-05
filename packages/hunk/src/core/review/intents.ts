@@ -11,7 +11,16 @@
  */
 import type { ReviewAction } from "./actions";
 import { reviewLineAnchor, reviewRangeAnchor } from "./anchors";
-import { reviewExpansionSide, reviewGapAddress, reviewGapSourceForFile } from "./expansion";
+import {
+  clampReviewGapReveal,
+  reviewExpansionSide,
+  reviewGapAddress,
+  reviewGapId,
+  reviewGapsAroundHunk,
+  type ReviewGapAddress,
+  type ReviewGapEdge,
+  type ReviewGapReveal,
+} from "./expansion";
 import {
   reviewDefaultHunkLineTarget,
   reviewLineCoveredByHunks,
@@ -28,6 +37,8 @@ import {
 } from "./navigation";
 import {
   isReviewGapExpanded,
+  selectReviewGapReveal,
+  selectReviewGapSource,
   isReviewNoteWithinClearScope,
   reviewNoteCurrentOwnerHunkIndex,
   reviewNoteHasDescendants,
@@ -131,8 +142,12 @@ export type ReviewIntent =
   /** Dismiss one live agent note by id, leaving reviewer notes untouched. */
   | { type: "notes/remove-live"; noteId: string }
   | { type: "notes/clear"; fileKey?: string; includeUser?: boolean }
-  /** Flip one addressable collapsed gap between collapsed and expanded. */
-  | { type: "expansion/toggle"; fileKey: string; gapId: string };
+  /** Collapse a gap with anything revealed, or reveal the whole of a collapsed one. */
+  | { type: "expansion/toggle"; fileKey: string; gapId: string }
+  /** Reveal `lines` more unchanged lines of one gap, growing from one edge. */
+  | { type: "expansion/reveal"; fileKey: string; gapId: string; edge: ReviewGapEdge; lines: number }
+  /** Re-collapse what one hunk revealed: the bottom of the gap above it, the top of the one below. */
+  | { type: "expansion/collapse-hunk"; fileKey: string; hunkIndex: number };
 
 /**
  * Every intent type, as a value rather than only as a type.
@@ -161,6 +176,8 @@ export const REVIEW_INTENT_TYPES = [
   "notes/remove-live",
   "notes/clear",
   "expansion/toggle",
+  "expansion/reveal",
+  "expansion/collapse-hunk",
 ] as const satisfies readonly ReviewIntent["type"][];
 
 export type ReviewIntentType = (typeof REVIEW_INTENT_TYPES)[number];
@@ -230,6 +247,29 @@ export interface ReviewExpansionToggledOutcome {
   sourceIdentity?: string;
 }
 
+/** What a reveal settled on: the gap's new edges plus everything a caller needs to fill it. */
+export interface ReviewExpansionRevealedOutcome {
+  type: "expansion/revealed";
+  fileKey: string;
+  gapId: string;
+  edge: ReviewGapEdge;
+  top: number;
+  bottom: number;
+  side: ReviewSide;
+  oldRange: ReviewLineRange;
+  newRange: ReviewLineRange;
+  lineCount: number;
+  /** Absent when the file has no expandable source behind it. */
+  sourceIdentity?: string;
+}
+
+/** The gaps a hunk collapse actually changed; empty when the hunk had nothing revealed. */
+export interface ReviewExpansionCollapsedOutcome {
+  type: "expansion/collapsed";
+  fileKey: string;
+  gapIds: string[];
+}
+
 export type ReviewIntentOutcome =
   | ReviewSelectionChangedOutcome
   | ReviewDraftStartedOutcome
@@ -237,7 +277,9 @@ export type ReviewIntentOutcome =
   | ReviewNoteUpdatedOutcome
   | ReviewNoteRemovedOutcome
   | ReviewNotesClearedOutcome
-  | ReviewExpansionToggledOutcome;
+  | ReviewExpansionToggledOutcome
+  | ReviewExpansionRevealedOutcome
+  | ReviewExpansionCollapsedOutcome;
 
 /**
  * What each intent reports back.
@@ -265,6 +307,8 @@ export interface ReviewIntentOutcomeByType {
   "notes/remove-live": ReviewNoteRemovedOutcome;
   "notes/clear": ReviewNotesClearedOutcome;
   "expansion/toggle": ReviewExpansionToggledOutcome;
+  "expansion/reveal": ReviewExpansionRevealedOutcome;
+  "expansion/collapse-hunk": ReviewExpansionCollapsedOutcome;
 }
 
 export interface ReviewIntentPlan {
@@ -596,37 +640,121 @@ function planDraftReplyStart(
   };
 }
 
+/** Resolve one gap id against the file's geometry, sized by any source already loaded. */
+function requireGapAddress(state: ReviewState, file: ReviewFileV1, gapId: string) {
+  // Validated against the same addressing every renderer draws and every note-line check
+  // accepts, so a gap a surface can offer is exactly a gap this intent can expand (A1).
+  const address = reviewGapAddress(selectReviewGapSource(state, file), gapId);
+  if (!address) {
+    throw new ReviewIntentPlanningError(
+      "gap-not-found",
+      `Review gap ${gapId} does not exist in ${file.path}.`,
+    );
+  }
+  return address;
+}
+
+/** The fill facts every expansion outcome carries, so callers never re-derive them. */
+function gapFillFacts(file: ReviewFileV1, address: ReviewGapAddress) {
+  return {
+    side: reviewExpansionSide(file.changeKind),
+    oldRange: address.oldRange,
+    newRange: address.newRange,
+    lineCount: address.lineCount,
+    ...(file.sourceIdentity !== undefined ? { sourceIdentity: file.sourceIdentity } : {}),
+  };
+}
+
 /** Plan flipping one collapsed gap, resolving the address it names. */
 function planExpansionToggle(
   state: ReviewState,
   intent: Extract<ReviewIntent, { type: "expansion/toggle" }>,
 ): ReviewIntentPlan {
   const file = requireReviewFile(state, intent.fileKey);
-  // Validated against the same addressing every renderer draws and every note-line check
-  // accepts, so a gap a surface can offer is exactly a gap this intent can expand (A1).
-  const address = reviewGapAddress(reviewGapSourceForFile(file), intent.gapId);
-  if (!address) {
-    throw new ReviewIntentPlanningError(
-      "gap-not-found",
-      `Review gap ${intent.gapId} does not exist in ${file.path}.`,
-    );
-  }
-
+  const address = requireGapAddress(state, file, intent.gapId);
   const expanded = !isReviewGapExpanded(state, file.key, intent.gapId);
   return {
-    actions: [{ type: "expansion/toggle", fileKey: file.key, gapId: intent.gapId, expanded }],
+    actions: [
+      {
+        type: "expansion/set",
+        fileKey: file.key,
+        gapId: intent.gapId,
+        top: expanded ? address.lineCount : 0,
+        bottom: 0,
+      },
+    ],
     outcome: {
       type: "expansion/toggled",
       fileKey: file.key,
       gapId: intent.gapId,
       expanded,
-      side: reviewExpansionSide(file.changeKind),
-      oldRange: address.oldRange,
-      newRange: address.newRange,
-      lineCount: address.lineCount,
-      ...(file.sourceIdentity !== undefined ? { sourceIdentity: file.sourceIdentity } : {}),
+      ...gapFillFacts(file, address),
     },
   };
+}
+
+/** Plan revealing more of one gap from one edge, clamped to what the gap holds. */
+function planExpansionReveal(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "expansion/reveal" }>,
+): ReviewIntentPlan {
+  if (!Number.isSafeInteger(intent.lines) || intent.lines <= 0) {
+    throw new ReviewIntentPlanningError(
+      "invalid-request",
+      `A reveal needs a positive whole number of lines, not ${intent.lines}.`,
+    );
+  }
+  const file = requireReviewFile(state, intent.fileKey);
+  const address = requireGapAddress(state, file, intent.gapId);
+  const current = clampReviewGapReveal(
+    selectReviewGapReveal(state, file.key, intent.gapId),
+    address.lineCount,
+  );
+  const other = intent.edge === "top" ? "bottom" : "top";
+  // The growing edge stops where the other one starts, so a reveal never shrinks it.
+  const fitted = {
+    ...current,
+    [intent.edge]: Math.min(
+      current[intent.edge] + intent.lines,
+      address.lineCount - current[other],
+    ),
+  } as ReviewGapReveal;
+  return {
+    actions: [{ type: "expansion/set", fileKey: file.key, gapId: intent.gapId, ...fitted }],
+    outcome: {
+      type: "expansion/revealed",
+      fileKey: file.key,
+      gapId: intent.gapId,
+      edge: intent.edge,
+      ...fitted,
+      ...gapFillFacts(file, address),
+    },
+  };
+}
+
+/** Plan re-collapsing the two gap edges one hunk owns. */
+function planExpansionHunkCollapse(
+  state: ReviewState,
+  intent: Extract<ReviewIntent, { type: "expansion/collapse-hunk" }>,
+): ReviewIntentPlan {
+  const file = requireReviewFile(state, intent.fileKey);
+  requireHunk(file, intent.hunkIndex);
+  const around = reviewGapsAroundHunk(selectReviewGapSource(state, file), intent.hunkIndex);
+  const actions: ReviewAction[] = [];
+  const gapIds: string[] = [];
+  const owned: Array<[ReviewGapAddress | undefined, ReviewGapEdge]> = [
+    [around.above, "bottom"],
+    [around.below, "top"],
+  ];
+  for (const [address, edge] of owned) {
+    if (!address) continue;
+    const gapId = reviewGapId(address.position, address.hunkIndex);
+    const current = selectReviewGapReveal(state, file.key, gapId);
+    if (current[edge] === 0) continue;
+    actions.push({ type: "expansion/set", fileKey: file.key, gapId, ...current, [edge]: 0 });
+    gapIds.push(gapId);
+  }
+  return { actions, outcome: { type: "expansion/collapsed", fileKey: file.key, gapIds } };
 }
 
 /** Resolve an active or stale note that may parent a new reply. */
@@ -920,6 +1048,10 @@ export function planReviewIntent(
       return { actions: [{ type: "draft/cancel" }] };
     case "expansion/toggle":
       return planExpansionToggle(state, intent);
+    case "expansion/reveal":
+      return planExpansionReveal(state, intent);
+    case "expansion/collapse-hunk":
+      return planExpansionHunkCollapse(state, intent);
     case "notes/create-user":
       return planUserNoteCreation(state, facts);
     case "notes/update-user":

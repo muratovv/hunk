@@ -1,4 +1,5 @@
 import { memo } from "react";
+import type { ReviewGapReveal } from "../../../core/review/expansion";
 import type { DiffFile } from "../../../core/changeset/model";
 import type { LayoutMode } from "../../../core/run/commandInputs";
 import type { UserNoteLineTarget } from "../../../core/liveComments";
@@ -21,7 +22,7 @@ import type { ResolvedFileViewLayout } from "../../fileViews/useFileViews";
 
 interface DiffSectionProps {
   codeHorizontalOffset: number;
-  expandedGapKeys: ReadonlySet<string>;
+  gapReveals: ReadonlyMap<string, ReviewGapReveal>;
   /** Validated extension marks for this file, in source coordinates. */
   extensionLineHighlights?: readonly ValidatedLineHighlight[];
   file: DiffFile;
@@ -64,7 +65,7 @@ interface DiffSectionProps {
 /** Render one file section in the main review stream. */
 function DiffSectionComponent({
   codeHorizontalOffset,
-  expandedGapKeys,
+  gapReveals,
   extensionLineHighlights,
   file,
   fileView,
@@ -184,7 +185,7 @@ function DiffSectionComponent({
         />
       ) : (
         <DiffSectionBody
-          expandedGapKeys={expandedGapKeys}
+          gapReveals={gapReveals}
           extensionLineHighlights={extensionLineHighlights}
           file={file}
           layout={layout}
@@ -228,7 +229,7 @@ export const DiffSection = memo(DiffSectionComponent, (previous, next) => {
   // numerically unchanged, so a reference change here always means the visible slice moved.
   return (
     previous.codeHorizontalOffset === next.codeHorizontalOffset &&
-    previous.expandedGapKeys === next.expandedGapKeys &&
+    previous.gapReveals === next.gapReveals &&
     previous.extensionLineHighlights === next.extensionLineHighlights &&
     previous.file === next.file &&
     previous.fileView === next.fileView &&

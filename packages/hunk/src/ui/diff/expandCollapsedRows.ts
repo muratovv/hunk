@@ -1,4 +1,8 @@
-import { reviewGapId } from "../../core/review/expansion";
+import {
+  clampReviewGapReveal,
+  reviewGapId,
+  type ReviewGapReveal,
+} from "../../core/review/expansion";
 import { normalizedReviewSourceLines } from "../../core/review/geometry";
 import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
 import { sanitizeTerminalLine, sanitizeTerminalSpans } from "../../lib/terminalText";
@@ -21,7 +25,8 @@ export type FileSourceStatus =
 
 export interface ExpandCollapsedRowsOptions {
   layout: ExpansionLayout;
-  expandedKeys: ReadonlySet<string>;
+  /** Lines revealed from each edge, by gap id; a gap absent here stays collapsed. */
+  reveals: ReadonlyMap<string, ReviewGapReveal>;
   sourceStatus: FileSourceStatus | undefined;
   tabWidth?: number;
   /** Optional syntax-aware span resolver for a zero-based source line. */
@@ -31,8 +36,23 @@ export interface ExpandCollapsedRowsOptions {
   side?: "old" | "new";
 }
 
-function expandedRowText(lineCount: number) {
-  return `Hide ${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}`;
+const LINE_COUNT_BY_LOADED_STATUS = new WeakMap<FileSourceStatus, number>();
+
+/** Line total of loaded source, counted once per status object (render paths ask often). */
+export function loadedSourceLineCount(status: FileSourceStatus | undefined) {
+  if (status?.kind !== "loaded") {
+    return undefined;
+  }
+  let count = LINE_COUNT_BY_LOADED_STATUS.get(status);
+  if (count === undefined) {
+    count = normalizedReviewSourceLines(status.text).length;
+    LINE_COUNT_BY_LOADED_STATUS.set(status, count);
+  }
+  return count;
+}
+
+function hiddenRowText(lineCount: number) {
+  return `${lineCount} unchanged ${lineCount === 1 ? "line" : "lines"}`;
 }
 
 function loadingRowText(lineCount: number) {
@@ -109,11 +129,11 @@ function buildUnifiedContextRow(
 }
 
 /**
- * Replace each expanded collapsed row with the actual unchanged file lines it
- * represents. The original collapsed row stays in place as a status row, and
- * synthesized context rows follow it when source has loaded. When source is
- * still loading or failed, only the row label changes so the user sees the
- * state of the request.
+ * Replace each revealed collapsed row with the unchanged file lines it now shows.
+ *
+ * A gap emits its top-edge lines, then a separator for the still-hidden middle, then its
+ * bottom-edge lines; once nothing is hidden the separator goes and the hunks join. While
+ * source is loading or failed, the collapsed row stays whole and its label reports that.
  */
 export function expandCollapsedRows(
   rows: DiffRow[],
@@ -121,14 +141,14 @@ export function expandCollapsedRows(
 ): DiffRow[] {
   const {
     layout,
-    expandedKeys,
+    reveals,
     sourceLineSpans,
     sourceStatus,
     tabWidth = DEFAULT_TAB_WIDTH,
     side = "new",
   } = options;
 
-  if (expandedKeys.size === 0) {
+  if (reveals.size === 0) {
     return rows;
   }
 
@@ -142,14 +162,14 @@ export function expandCollapsedRows(
       continue;
     }
 
-    const key = reviewGapId(row.position, row.hunkIndex);
-    if (!expandedKeys.has(key)) {
+    const range = side === "old" ? row.oldRange : row.newRange;
+    const lineCount = Math.max(0, range[1] - range[0] + 1);
+    const requested = reveals.get(reviewGapId(row.position, row.hunkIndex));
+    const reveal = requested ? clampReviewGapReveal(requested, lineCount) : undefined;
+    if (!reveal || reveal.top + reveal.bottom === 0) {
       result.push(row);
       continue;
     }
-
-    const range = side === "old" ? row.oldRange : row.newRange;
-    const lineCount = Math.max(0, range[1] - range[0] + 1);
 
     if (sourceStatus?.kind === "loading") {
       result.push({ ...row, text: loadingRowText(lineCount) });
@@ -162,8 +182,8 @@ export function expandCollapsedRows(
     }
 
     if (sourceStatus === undefined) {
-      // expandedKeys can briefly contain a key before the controller's load
-      // status is committed; keep the original label until status arrives.
+      // A reveal can be recorded a tick before the controller commits its load status;
+      // keep the original label until status arrives.
       result.push(row);
       continue;
     }
@@ -180,45 +200,39 @@ export function expandCollapsedRows(
       continue;
     }
 
-    result.push({
-      ...row,
-      text: expandedRowText(lineCount),
-    });
-
-    for (let offset = 0; offset < lineCount; offset += 1) {
+    const pushContextRow = (offset: number) => {
       const oldLineNumber = row.oldRange[0] + offset;
       const newLineNumber = row.newRange[0] + offset;
       const sourceLineNumber = (side === "old" ? oldLineNumber : newLineNumber) - 1;
-      if (sourceLineNumber < 0 || sourceLineNumber >= sourceLines.length) {
-        break;
-      }
-
       const text = sourceLines[sourceLineNumber];
       const spans = sourceLineSpans
         ? sanitizeTerminalSpans(sourceLineSpans(text, sourceLineNumber))
         : spansFor(text, tabWidth);
-
+      const build = layout === "split" ? buildSplitContextRow : buildUnifiedContextRow;
       result.push(
-        layout === "split"
-          ? buildSplitContextRow(
-              row.fileId,
-              row.hunkIndex,
-              row.position,
-              offset,
-              oldLineNumber,
-              newLineNumber,
-              spans,
-            )
-          : buildUnifiedContextRow(
-              row.fileId,
-              row.hunkIndex,
-              row.position,
-              offset,
-              oldLineNumber,
-              newLineNumber,
-              spans,
-            ),
+        build(row.fileId, row.hunkIndex, row.position, offset, oldLineNumber, newLineNumber, spans),
       );
+    };
+
+    for (let offset = 0; offset < reveal.top; offset += 1) {
+      pushContextRow(offset);
+    }
+
+    const hidden = lineCount - reveal.top - reveal.bottom;
+    if (hidden > 0) {
+      const oldStart = row.oldRange[0] + reveal.top;
+      const newStart = row.newRange[0] + reveal.top;
+      result.push({
+        ...row,
+        text: hiddenRowText(hidden),
+        oldRange: [oldStart, oldStart + hidden - 1],
+        newRange: [newStart, newStart + hidden - 1],
+        revealed: true,
+      });
+    }
+
+    for (let offset = lineCount - reveal.bottom; offset < lineCount; offset += 1) {
+      pushContextRow(offset);
     }
   }
 

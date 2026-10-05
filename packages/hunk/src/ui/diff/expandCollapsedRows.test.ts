@@ -31,6 +31,11 @@ function makeHunkHeader(hunkIndex: number): Extract<DiffRow, { type: "hunk-heade
   };
 }
 
+/** Reveal one whole gap; the engine clamps the count to the gap's size. */
+function revealAll(gapId: string) {
+  return new Map([[gapId, { top: Number.MAX_SAFE_INTEGER, bottom: 0 }]]);
+}
+
 const SOURCE = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"].join("\n") + "\n";
 const OSC52_CLIPBOARD = "\x1b]52;c;SGVsbG8=\x07";
 const CSI_CLEAR_SCREEN = "\x1b[2J";
@@ -52,7 +57,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set(),
+      reveals: new Map(),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
@@ -65,7 +70,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: undefined,
       side: "new",
     });
@@ -84,7 +89,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "loading" },
       side: "new",
     });
@@ -102,7 +107,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "error" },
       side: "new",
     });
@@ -120,7 +125,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "error", reason: "too-large" },
       side: "new",
     });
@@ -132,20 +137,19 @@ describe("expandCollapsedRows", () => {
     expect(collapsed.text.toLowerCase()).toContain("source too large");
   });
 
-  test("inserts split-line context rows after the expanded collapsed row", () => {
+  test("replaces a fully revealed gap with split-line context rows", () => {
     const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 3], [1, 3]), makeHunkHeader(0)];
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
 
-    expect(result.length).toBe(rows.length + 3);
-    expect(result[0]?.type).toBe("collapsed");
+    expect(result.length).toBe(rows.length - 1 + 3);
 
-    const inserted = result.slice(1, 4);
+    const inserted = result.slice(0, 3);
     expect(inserted.every((row) => row.type === "split-line")).toBe(true);
 
     const first = inserted[0];
@@ -174,12 +178,12 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "unified",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
 
-    const inserted = result.slice(1, 3);
+    const inserted = result.slice(0, 2);
     expect(inserted.every((row) => row.type === "unified-line")).toBe(true);
 
     const first = inserted[0];
@@ -193,21 +197,37 @@ describe("expandCollapsedRows", () => {
     expect(first.expandedGapKey).toBe(reviewGapId("before", 0));
   });
 
-  test("changes the collapsed-row label to indicate expansion", () => {
-    const rows: DiffRow[] = [makeCollapsedRow("before", 0, [1, 2], [1, 2]), makeHunkHeader(0)];
+  test("keeps a separator for the still-hidden middle of a partly revealed gap", () => {
+    const rows: DiffRow[] = [makeCollapsedRow("before", 1, [1, 6], [11, 16]), makeHunkHeader(1)];
 
     const result = expandCollapsedRows(rows, {
-      layout: "split",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      layout: "unified",
+      reveals: new Map([[reviewGapId("before", 1), { top: 1, bottom: 2 }]]),
       sourceStatus: { kind: "loaded", text: SOURCE },
-      side: "new",
+      side: "old",
     });
 
-    const collapsed = result[0];
-    if (!collapsed || collapsed.type !== "collapsed") {
-      throw new Error("expected first row to be the collapsed marker");
-    }
-    expect(collapsed.text.toLowerCase()).toContain("hide");
+    expect(result.map((row) => row.type)).toEqual([
+      "unified-line",
+      "collapsed",
+      "unified-line",
+      "unified-line",
+      "hunk-header",
+    ]);
+    const lineText = (row: DiffRow | undefined) =>
+      row?.type === "unified-line" ? row.cell.spans[0]?.text : undefined;
+    expect([lineText(result[0]), lineText(result[2]), lineText(result[3])]).toEqual([
+      "alpha",
+      "epsilon",
+      "zeta",
+    ]);
+    expect(result[1]).toMatchObject({
+      key: rows[0]!.key,
+      text: "3 unchanged lines",
+      oldRange: [2, 4],
+      newRange: [12, 14],
+      revealed: true,
+    });
   });
 
   test("expands trailing gaps from the requested side", () => {
@@ -215,12 +235,12 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "unified",
-      expandedKeys: new Set([reviewGapId("trailing", 0)]),
+      reveals: revealAll(reviewGapId("trailing", 0)),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "new",
     });
 
-    expect(result.length).toBe(rows.length + 3);
+    expect(result.length).toBe(rows.length - 1 + 3);
     const last = result[result.length - 1];
     if (!last || last.type !== "unified-line") {
       throw new Error("expected synthesized unified-line rows after the trailing collapsed row");
@@ -234,12 +254,12 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "loaded", text: SOURCE },
       side: "old",
     });
 
-    const inserted = result.slice(1, 3);
+    const inserted = result.slice(0, 2);
     const first = inserted[0];
     if (!first || first.type !== "split-line") {
       throw new Error("expected split-line context rows");
@@ -256,12 +276,12 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "unified",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "loaded", text: sourceWithCrlf },
       side: "new",
     });
 
-    const inserted = result[1];
+    const inserted = result[0];
     if (!inserted || inserted.type !== "unified-line") {
       throw new Error("expected unified-line context row");
     }
@@ -274,12 +294,12 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "unified",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "loaded", text: sourceWithControls },
       side: "new",
     });
 
-    const inserted = result[1];
+    const inserted = result[0];
     if (!inserted || inserted.type !== "unified-line") {
       throw new Error("expected one unified-line row");
     }
@@ -297,13 +317,13 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "unified",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "loaded", text: sourceWithTab },
       tabWidth: 4,
       side: "new",
     });
 
-    const inserted = result[1];
+    const inserted = result[0];
     if (!inserted || inserted.type !== "unified-line") {
       throw new Error("expected one unified-line row");
     }
@@ -316,7 +336,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "unified",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "loaded", text: SOURCE },
       sourceLineSpans: (line, sourceLineNumber) => {
         calls.push({ line, sourceLineNumber });
@@ -330,7 +350,7 @@ describe("expandCollapsedRows", () => {
       { line: "gamma", sourceLineNumber: 2 },
     ]);
 
-    const inserted = result[1];
+    const inserted = result[0];
     if (!inserted || inserted.type !== "unified-line") {
       throw new Error("expected unified-line context row");
     }
@@ -342,7 +362,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "unified",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "loaded", text: "alpha\n" },
       side: "new",
     });
@@ -353,7 +373,6 @@ describe("expandCollapsedRows", () => {
       throw new Error("expected first row to be collapsed");
     }
     expect(collapsed.text.toLowerCase()).toContain("could not load");
-    expect(collapsed.text.toLowerCase()).not.toContain("hide");
   });
 
   test("shows an error row when old-side split expansion is out of bounds", () => {
@@ -361,7 +380,7 @@ describe("expandCollapsedRows", () => {
 
     const result = expandCollapsedRows(rows, {
       layout: "split",
-      expandedKeys: new Set([reviewGapId("before", 0)]),
+      reveals: revealAll(reviewGapId("before", 0)),
       sourceStatus: { kind: "loaded", text: "alpha\n" },
       side: "old",
     });

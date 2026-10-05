@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { createTestReviewFile } from "../../../../../test/helpers/review-store-helpers";
 import {
+  clampReviewGapReveal,
   parseReviewGapId,
   resolveReviewExpandedLine,
   reviewExpansionSide,
   reviewGapAddress,
   reviewGapId,
+  reviewGapsAroundHunk,
   reviewLeadingGap,
   reviewTrailingGap,
   type ReviewGapHunk,
@@ -233,6 +235,125 @@ describe("reviewTrailingGap", () => {
     };
 
     expect(reviewTrailingGap(file)).toBeUndefined();
+  });
+
+  /** A git-style patch: only hunk rows, so the file length comes from loaded source. */
+  function partial(hunks: ReviewGapHunk[], sourceLines?: ReviewGapSource["sourceLines"]) {
+    return {
+      hunks,
+      deletionLines: [],
+      additionLines: [],
+      isPartial: true,
+      ...(sourceLines ? { sourceLines } : {}),
+    } satisfies ReviewGapSource;
+  }
+
+  test("sizes a partial patch's tail from the loaded source", () => {
+    const file = partial(
+      [
+        hunk({
+          collapsedBefore: 9,
+          additionStart: 10,
+          additionCount: 2,
+          deletionStart: 10,
+          deletionCount: 1,
+        }),
+      ],
+      { side: "new", count: 30 },
+    );
+
+    expect(reviewTrailingGap(file)).toEqual({
+      position: "trailing",
+      hunkIndex: 0,
+      oldRange: [11, 29],
+      newRange: [12, 30],
+      lineCount: 19,
+    });
+  });
+
+  test("starts a partial tail right after the positioned line of a zero-count side", () => {
+    // @@ -12,0 +13,2 @@ — a pure insertion after old line 12; the tail resumes at old 13.
+    const file = partial(
+      [
+        hunk({
+          collapsedBefore: 12,
+          additionStart: 13,
+          additionCount: 2,
+          deletionStart: 12,
+          deletionCount: 0,
+        }),
+      ],
+      { side: "old", count: 20 },
+    );
+
+    expect(reviewTrailingGap(file)).toEqual({
+      position: "trailing",
+      hunkIndex: 0,
+      oldRange: [13, 20],
+      newRange: [15, 22],
+      lineCount: 8,
+    });
+  });
+
+  test("has no partial tail when the source ends at the last hunk", () => {
+    const file = partial(
+      [
+        hunk({
+          collapsedBefore: 9,
+          additionStart: 10,
+          additionCount: 2,
+          deletionStart: 10,
+          deletionCount: 1,
+        }),
+      ],
+      { side: "new", count: 11 },
+    );
+
+    expect(reviewTrailingGap(file)).toBeUndefined();
+  });
+});
+
+describe("reviewGapsAroundHunk", () => {
+  // Hunks at lines 6 and 20 of a 30-line file: gaps 1-5, 7-19 and 21-30.
+  const file = source(
+    [
+      hunk({
+        collapsedBefore: 5,
+        additionStart: 6,
+        additionCount: 1,
+        deletionStart: 6,
+        deletionCount: 1,
+      }),
+      hunk({
+        collapsedBefore: 13,
+        additionStart: 20,
+        additionCount: 1,
+        deletionStart: 20,
+        deletionCount: 1,
+      }),
+    ],
+    { old: 30, new: 30 },
+  );
+
+  test("pairs a hunk with the gap above it and the next hunk's leading gap below it", () => {
+    const around = reviewGapsAroundHunk(file, 0);
+    expect(around.above?.newRange).toEqual([1, 5]);
+    expect(around.below).toMatchObject({ position: "before", hunkIndex: 1, newRange: [7, 19] });
+  });
+
+  test("gives the last hunk the file's trailing gap below it", () => {
+    expect(reviewGapsAroundHunk(file, 1).below).toMatchObject({
+      position: "trailing",
+      newRange: [21, 30],
+    });
+  });
+});
+
+describe("clampReviewGapReveal", () => {
+  test("keeps a reveal that fits, and lets the top edge win an overlap", () => {
+    expect(clampReviewGapReveal({ top: 5, bottom: 7 }, 30)).toEqual({ top: 5, bottom: 7 });
+    expect(clampReviewGapReveal({ top: 20, bottom: 20 }, 30)).toEqual({ top: 20, bottom: 10 });
+    expect(clampReviewGapReveal({ top: 40, bottom: 20 }, 30)).toEqual({ top: 30, bottom: 0 });
   });
 });
 

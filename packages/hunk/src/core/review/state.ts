@@ -175,10 +175,17 @@ export type ReviewSourceStatus =
   | { kind: "loaded"; text: string }
   | { kind: "error"; reason?: "too-large" };
 
+/**
+ * How much of one collapsed gap is revealed, counted from each edge.
+ *
+ * `top` grows down from the hunk above the gap, `bottom` grows up from the hunk below.
+ * Only gaps with something revealed are kept.
+ */
 export interface ReviewExpandedGapState {
   fileKey: string;
   gapId: string;
-  expanded: boolean;
+  top: number;
+  bottom: number;
 }
 
 /**

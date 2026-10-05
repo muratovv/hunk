@@ -362,7 +362,7 @@ function buildWrappedBoundaryContext(layout: "unified" | "split", reserveAddNote
     width,
     false,
     true,
-    new Set(),
+    new Map(),
     undefined,
     reserveAddNoteColumn,
   );
