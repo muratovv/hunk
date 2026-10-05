@@ -714,6 +714,17 @@ export function createPtyHarness() {
     return { ...fixture, movedBlock, plainAddition };
   }
 
+  /** A 120-line file changed at lines 40 and 90: gaps of 36, 43 and 27 lines around two hunks. */
+  function createDirectionalGapRepoFixture() {
+    const before = Array.from({ length: 120 }, (_, index) => `line ${index + 1} of the file`);
+    const after = [...before];
+    after[39] = "CHANGED 40 of the file";
+    after[89] = "CHANGED 90 of the file";
+    return createGitRepoFixture([
+      { path: "a.txt", before: `${before.join("\n")}\n`, after: `${after.join("\n")}\n` },
+    ]);
+  }
+
   /** Build the long-path fixture used to verify narrow file-header layout. */
   function createNarrowHeaderTestRepoFixture() {
     return createGitRepoFixture([
@@ -1333,6 +1344,7 @@ end
     createBottomClampedRepoFixture,
     createCollapsedTopRepoFixture,
     createExpandableContextFilePair,
+    createDirectionalGapRepoFixture,
     createCrossFileHunkNavigationRepoFixture,
     createDeletionOnlyFilePair,
     createElixirHeredocRepoFixture,

@@ -242,7 +242,7 @@ export default function registerReviewTriage(hunk: HunkExtensionAPI) {
     }
   });
 
-  hunk.registerCommand({ id: "mark", title: "Mark selected hunk…", key: "x" }, async (ctx) => {
+  hunk.registerCommand({ id: "mark", title: "Mark selected hunk…", key: "X" }, async (ctx) => {
     const { file, hunkIndex } = ctx.selection;
     if (!file || hunkIndex === null) {
       ctx.notify("Select a hunk before triaging it", "warning");

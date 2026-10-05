@@ -13,7 +13,7 @@ import {
   selectActiveRevealNoteId,
   selectActiveStoredReviewNote,
   selectNavigableStoredReviewNotes,
-  selectExpandedGapIdsByFileKey,
+  selectGapRevealsByFileKey,
   selectFallbackFileKey,
   selectNormalizedSelection,
   selectNotesByHunk,
@@ -62,22 +62,22 @@ describe("reviewFileKeysWithRetiredContent", () => {
 });
 
 describe("expansion selectors", () => {
-  test("report expansion per gap and per file", () => {
+  test("report revealed lines per gap and per file", () => {
     const expanded = [
-      { fileKey: "alpha", gapId: "before:1", expanded: true },
-      { fileKey: "alpha", gapId: "before:2", expanded: false },
-      { fileKey: "beta", gapId: "trailing:0", expanded: true },
+      { fileKey: "alpha", gapId: "before:1", top: 20, bottom: 0 },
+      { fileKey: "alpha", gapId: "before:2", top: 0, bottom: 0 },
+      { fileKey: "beta", gapId: "trailing:0", top: 0, bottom: 7 },
     ].reduce(
-      (state, gap) => reduceReviewState(state, { type: "expansion/toggle", ...gap }),
+      (state, gap) => reduceReviewState(state, { type: "expansion/set", ...gap }),
       createTestReviewState(),
     );
 
     expect(isReviewGapExpanded(expanded, "alpha", "before:1")).toBe(true);
     expect(isReviewGapExpanded(expanded, "alpha", "before:2")).toBe(false);
     expect(isReviewGapExpanded(expanded, "gamma", "before:1")).toBe(false);
-    expect(selectExpandedGapIdsByFileKey(expanded)).toEqual({
-      alpha: new Set(["before:1"]),
-      beta: new Set(["trailing:0"]),
+    expect(selectGapRevealsByFileKey(expanded)).toEqual({
+      alpha: new Map([["before:1", { top: 20, bottom: 0 }]]),
+      beta: new Map([["trailing:0", { top: 0, bottom: 7 }]]),
     });
   });
 });

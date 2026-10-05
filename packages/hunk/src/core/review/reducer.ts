@@ -272,15 +272,25 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
         activeNoteId: action.note.note.id,
       };
     }
-    case "expansion/toggle": {
+    case "expansion/set": {
       const index = state.expandedGaps.findIndex(
         (gap) => gap.fileKey === action.fileKey && gap.gapId === action.gapId,
       );
-      if (index >= 0 && state.expandedGaps[index]!.expanded === action.expanded) {
+      const current = index >= 0 ? state.expandedGaps[index]! : { top: 0, bottom: 0 };
+      if (current.top === action.top && current.bottom === action.bottom) {
         return state;
       }
-      const gap = { fileKey: action.fileKey, gapId: action.gapId, expanded: action.expanded };
       const expandedGaps = [...state.expandedGaps];
+      if (action.top === 0 && action.bottom === 0) {
+        expandedGaps.splice(index, 1);
+        return { ...state, expandedGaps };
+      }
+      const gap = {
+        fileKey: action.fileKey,
+        gapId: action.gapId,
+        top: action.top,
+        bottom: action.bottom,
+      };
       if (index >= 0) {
         expandedGaps[index] = gap;
       } else {

@@ -173,8 +173,8 @@ describe("document reconciliation", () => {
         { key: "alpha", sourceIdentity: "source-1", sourceAttested: true },
         { key: "beta", sourceIdentity: "source-1", sourceAttested: true },
       ]),
-      { type: "expansion/toggle", fileKey: "alpha", gapId: "before:1", expanded: true },
-      { type: "expansion/toggle", fileKey: "beta", gapId: "before:1", expanded: true },
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:1", top: 5, bottom: 0 },
+      { type: "expansion/set", fileKey: "beta", gapId: "before:1", top: 5, bottom: 0 },
       {
         type: "expansion/set-source-status",
         fileKey: "alpha",
@@ -195,14 +195,14 @@ describe("document reconciliation", () => {
       ]),
     });
 
-    expect(next.expandedGaps).toEqual([{ fileKey: "beta", gapId: "before:1", expanded: true }]);
+    expect(next.expandedGaps).toEqual([{ fileKey: "beta", gapId: "before:1", top: 5, bottom: 0 }]);
     expect(next.sourceStatusByFileKey).toEqual({ beta: { kind: "loaded", text: "b" } });
   });
 
   test("drops unattested loaded source on reconcile while keeping the gap open", () => {
     const state = reduceAll(
       createTestReviewState([{ key: "alpha", sourceIdentity: "source-1" }]),
-      { type: "expansion/toggle", fileKey: "alpha", gapId: "before:1", expanded: true },
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:1", top: 5, bottom: 0 },
       {
         type: "expansion/set-source-status",
         fileKey: "alpha",
@@ -217,16 +217,17 @@ describe("document reconciliation", () => {
       document: createTestReviewDocument([{ key: "alpha", sourceIdentity: "source-1" }]),
     });
 
-    expect(next.expandedGaps).toEqual([{ fileKey: "alpha", gapId: "before:1", expanded: true }]);
+    expect(next.expandedGaps).toEqual([{ fileKey: "alpha", gapId: "before:1", top: 5, bottom: 0 }]);
     expect(next.sourceStatusByFileKey).toEqual({});
   });
 
   test("drops file-scoped state for a file the new document retired", () => {
     const state = reduceReviewState(createTestReviewState(["alpha", "beta"]), {
-      type: "expansion/toggle",
+      type: "expansion/set",
       fileKey: "beta",
       gapId: "before:1",
-      expanded: true,
+      top: 5,
+      bottom: 0,
     });
 
     const next = reduceReviewState(state, {
@@ -542,36 +543,56 @@ describe("drafts", () => {
 });
 
 describe("expansion", () => {
-  test("collapses a gap without forgetting the other gaps of the file", () => {
+  test("records revealed lines per edge and forgets a gap revealed down to nothing", () => {
     const state = reduceAll(
       createTestReviewState(),
-      { type: "expansion/toggle", fileKey: "alpha", gapId: "before:1", expanded: true },
-      { type: "expansion/toggle", fileKey: "alpha", gapId: "before:2", expanded: true },
-      { type: "expansion/toggle", fileKey: "alpha", gapId: "before:1", expanded: false },
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:1", top: 20, bottom: 0 },
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:2", top: 0, bottom: 40 },
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:1", top: 20, bottom: 20 },
     );
 
     expect(state.expandedGaps).toEqual([
-      { fileKey: "alpha", gapId: "before:1", expanded: false },
-      { fileKey: "alpha", gapId: "before:2", expanded: true },
+      { fileKey: "alpha", gapId: "before:1", top: 20, bottom: 20 },
+      { fileKey: "alpha", gapId: "before:2", top: 0, bottom: 40 },
     ]);
+    expect(
+      reduceReviewState(state, {
+        type: "expansion/set",
+        fileKey: "alpha",
+        gapId: "before:1",
+        top: 0,
+        bottom: 0,
+      }).expandedGaps,
+    ).toEqual([{ fileKey: "alpha", gapId: "before:2", top: 0, bottom: 40 }]);
   });
 
-  test("ignores a toggle that repeats the current expansion", () => {
+  test("ignores a set that repeats the current reveal", () => {
     const state = reduceReviewState(createTestReviewState(), {
-      type: "expansion/toggle",
+      type: "expansion/set",
       fileKey: "alpha",
       gapId: "before:1",
-      expanded: true,
+      top: 20,
+      bottom: 0,
     });
 
     expect(
       reduceReviewState(state, {
-        type: "expansion/toggle",
+        type: "expansion/set",
         fileKey: "alpha",
         gapId: "before:1",
-        expanded: true,
+        top: 20,
+        bottom: 0,
       }),
     ).toBe(state);
+    expect(
+      reduceReviewState(createTestReviewState(), {
+        type: "expansion/set",
+        fileKey: "alpha",
+        gapId: "before:1",
+        top: 0,
+        bottom: 0,
+      }).expandedGaps,
+    ).toEqual([]);
   });
 
   test("compares source status by value so a repeated load does not re-render", () => {

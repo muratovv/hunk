@@ -1002,7 +1002,7 @@ describe("PTY extensions", () => {
       }
       expect(menu).not.toBeNull();
       expect(menu!).toMatch(/Toggle review triage\s+Y/);
-      expect(menu).toMatch(/Mark selected hunk…\s+x/);
+      expect(menu).toMatch(/Mark selected hunk…\s+X/);
       expect(menu).toContain("Center current review line");
       expect(menu).toContain("Set review focus…");
       expect(menu).toContain("Clear triage decisions");

@@ -39,13 +39,19 @@ import {
   type ReviewIntentFacts,
 } from "../../core/review/intents";
 import { projectReviewDocument } from "../../core/review/document";
-import { reviewExpansionSide } from "../../core/review/expansion";
+import {
+  REVIEW_GAP_REVEAL_STEP,
+  reviewExpansionSide,
+  type ReviewGapReveal,
+} from "../../core/review/expansion";
+import type { GapAction } from "../diff/gapAction";
 import { reviewHunkIndexForLine } from "../../core/review/geometry";
 import type { ReviewSelectionScope } from "../../core/review/navigation";
 import {
   reviewFileKeysWithRetiredContent,
   selectActiveStoredReviewNote,
-  selectExpandedGapIdsByFileKey,
+  isReviewGapExpanded,
+  selectGapRevealsByFileKey,
   selectNavigableStoredReviewNotes,
   selectNormalizedSelection,
   selectThreadedStoredReviewNotes,
@@ -224,7 +230,7 @@ export interface TerminalReview {
   store: ReviewStore;
   /** The store's monotonic revision, reported to anyone ordering this review's publications. */
   stateRevision: number;
-  expandedGapsByFileId: Record<string, ReadonlySet<string>>;
+  gapRevealsByFileId: Record<string, ReadonlyMap<string, ReviewGapReveal>>;
   filter: string;
   draftNote: DraftReviewNote | null;
   liveCommentCount: number;
@@ -261,6 +267,12 @@ export interface TerminalReview {
   sourceStatusByFileId: Record<string, FileSourceStatus>;
   toggleGap: (fileId: string, gapKey: string) => void;
   toggleSelectedHunkGap: () => void;
+  /** Apply one ▲ / ▼ / ✕ action a renderer addressed by file id. */
+  gapAction: (fileId: string, action: GapAction) => void;
+  /** Reveal one more step of context above or below the selected hunk. */
+  revealSelectedHunkContext: (direction: "above" | "below") => void;
+  /** Fold back everything the selected hunk revealed. */
+  collapseSelectedHunkContext: () => void;
   visibleFiles: DiffFile[];
   addLiveComment: (
     input: CommentToolInput,
@@ -556,14 +568,12 @@ export function useTerminalReview({
     return draft && file ? storedDraftToDraftNote(draft, file) : null;
   }, [fileByKey, state.draftNote]);
   const expandedGaps = state.expandedGaps;
-  const expandedGapsByFileId = useMemo(() => {
-    const result: Record<string, ReadonlySet<string>> = {};
-    for (const [fileKey, gapIds] of Object.entries(
-      selectExpandedGapIdsByFileKey({ expandedGaps }),
-    )) {
+  const gapRevealsByFileId = useMemo(() => {
+    const result: Record<string, ReadonlyMap<string, ReviewGapReveal>> = {};
+    for (const [fileKey, reveals] of Object.entries(selectGapRevealsByFileKey({ expandedGaps }))) {
       const file = fileByKey.get(fileKey);
       if (file) {
-        result[file.id] = gapIds;
+        result[file.id] = reveals;
       }
     }
     return result;
@@ -1057,7 +1067,7 @@ export function useTerminalReview({
   useEffect(() => {
     const snapshot = store.getSnapshot();
     for (const gap of snapshot.expandedGaps) {
-      if (!gap.expanded || snapshot.sourceStatusByFileKey[gap.fileKey]) {
+      if (snapshot.sourceStatusByFileKey[gap.fileKey]) {
         continue;
       }
       const file = fileByKey.get(gap.fileKey);
@@ -1120,6 +1130,78 @@ export function useTerminalReview({
       applyGapToggle(file, intent);
     }
   }, [applyGapToggle, fileByKey, lowerCommand]);
+
+  /**
+   * Run one reveal and fetch the source that fills it.
+   *
+   * The line cursor stays where it is, so repeated presses keep growing from the same hunk
+   * instead of following the cursor into the next one.
+   */
+  const applyGapReveal = useCallback(
+    (file: DiffFile, intent: Extract<ReviewIntent, { type: "expansion/reveal" }>) => {
+      const revealed = runIntent(intent);
+      startSourceLoad(file, intent.fileKey, revealed.side);
+    },
+    [runIntent, startSourceLoad],
+  );
+
+  const gapAction = useCallback(
+    (fileId: string, action: GapAction) => {
+      const file = allFiles.find((entry) => entry.id === fileId);
+      const fileKey = keyByFileId.get(fileId);
+      if (!file?.sourceFetcher || !fileKey) {
+        return;
+      }
+
+      switch (action.kind) {
+        case "reveal":
+          applyGapReveal(file, {
+            type: "expansion/reveal",
+            fileKey,
+            gapId: action.gapId,
+            edge: action.edge,
+            lines: action.lines ?? REVIEW_GAP_REVEAL_STEP,
+          });
+          return;
+        case "collapse-gap":
+          if (isReviewGapExpanded(store.getSnapshot(), fileKey, action.gapId)) {
+            applyGapToggle(file, { type: "expansion/toggle", fileKey, gapId: action.gapId });
+          }
+          return;
+        case "collapse-hunk":
+          runIntent({ type: "expansion/collapse-hunk", fileKey, hunkIndex: action.hunkIndex });
+          return;
+        case "load-source":
+          startSourceLoad(file, fileKey, reviewExpansionSide(file.metadata.type));
+          return;
+      }
+    },
+    [allFiles, applyGapReveal, applyGapToggle, keyByFileId, runIntent, startSourceLoad, store],
+  );
+
+  const revealSelectedHunkContext = useCallback(
+    (direction: "above" | "below") => {
+      const intent = lowerCommand(
+        direction === "above" ? "hunk.review.expandAboveHunk" : "hunk.review.expandBelowHunk",
+      );
+      if (intent?.type !== "expansion/reveal") {
+        return;
+      }
+
+      const file = fileByKey.get(intent.fileKey);
+      if (file?.sourceFetcher) {
+        applyGapReveal(file, intent);
+      }
+    },
+    [applyGapReveal, fileByKey, lowerCommand],
+  );
+
+  const collapseSelectedHunkContext = useCallback(() => {
+    const intent = lowerCommand("hunk.review.collapseHunkContext");
+    if (intent?.type === "expansion/collapse-hunk") {
+      runIntent(intent);
+    }
+  }, [lowerCommand, runIntent]);
 
   /**
    * Resolve one session-daemon navigation request against the current review and select it.
@@ -1773,7 +1855,7 @@ export function useTerminalReview({
     store,
     stateRevision: state.stateRevision,
     draftNote,
-    expandedGapsByFileId,
+    gapRevealsByFileId,
     filter,
     // Counted from the store, so notes on a file a reload retired still count as tracked.
     liveCommentCount: state.liveNotes.length,
@@ -1797,6 +1879,9 @@ export function useTerminalReview({
     sourceStatusByFileId,
     toggleGap,
     toggleSelectedHunkGap,
+    gapAction,
+    revealSelectedHunkContext,
+    collapseSelectedHunkContext,
     visibleFiles,
     addAgentLineHighlight,
     addLiveComment,

@@ -505,6 +505,16 @@ const ACTION_PARSERS: Record<ReviewIntentType, (record: Record<string, unknown>)
     hasExactKeys(record, ["type", "fileKey", "gapId"]) &&
     isIdentifier(record.fileKey) &&
     isIdentifier(record.gapId),
+  "expansion/reveal": (record) =>
+    hasExactKeys(record, ["type", "fileKey", "gapId", "edge", "lines"]) &&
+    isIdentifier(record.fileKey) &&
+    isIdentifier(record.gapId) &&
+    (record.edge === "top" || record.edge === "bottom") &&
+    isLineNumber(record.lines),
+  "expansion/collapse-hunk": (record) =>
+    hasExactKeys(record, ["type", "fileKey", "hunkIndex"]) &&
+    isIdentifier(record.fileKey) &&
+    isIndex(record.hunkIndex),
 };
 
 /**

@@ -989,7 +989,7 @@ describe("expansion/toggle", () => {
     });
 
     expect(plan.actions).toEqual([
-      { type: "expansion/toggle", fileKey: "alpha", gapId: "before:1", expanded: true },
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:1", top: 0, bottom: 9 },
     ]);
     expect(plan.outcome).toEqual({
       type: "expansion/toggled",
@@ -1003,12 +1003,13 @@ describe("expansion/toggle", () => {
     });
   });
 
-  test("collapses a gap that is already expanded", () => {
+  test("collapses a gap that has anything revealed", () => {
     const state = reduceReviewState(createTestReviewState(), {
-      type: "expansion/toggle",
+      type: "expansion/set",
       fileKey: "alpha",
       gapId: "before:1",
-      expanded: true,
+      top: 0,
+      bottom: 3,
     });
 
     const plan = planReviewIntent(state, {
@@ -1018,7 +1019,7 @@ describe("expansion/toggle", () => {
     });
 
     expect(plan.actions).toEqual([
-      { type: "expansion/toggle", fileKey: "alpha", gapId: "before:1", expanded: false },
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:1", top: 0, bottom: 0 },
     ]);
     expect(plan.outcome).toMatchObject({ expanded: false });
   });
@@ -1045,5 +1046,158 @@ describe("expansion/toggle", () => {
         }),
       ).toThrow(ReviewIntentPlanningError);
     }
+  });
+});
+
+describe("expansion/reveal", () => {
+  test("reveals lines from one edge on top of what that edge already shows", () => {
+    const state = reduceReviewState(createTestReviewState(), {
+      type: "expansion/set",
+      fileKey: "alpha",
+      gapId: "before:1",
+      top: 2,
+      bottom: 1,
+    });
+
+    const plan = planReviewIntent(state, {
+      type: "expansion/reveal",
+      fileKey: "alpha",
+      gapId: "before:1",
+      edge: "bottom",
+      lines: 3,
+    });
+
+    expect(plan.actions).toEqual([
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:1", top: 2, bottom: 4 },
+    ]);
+    expect(plan.outcome).toEqual({
+      type: "expansion/revealed",
+      fileKey: "alpha",
+      gapId: "before:1",
+      edge: "bottom",
+      top: 2,
+      bottom: 4,
+      side: "new",
+      oldRange: [2, 10],
+      newRange: [2, 10],
+      lineCount: 9,
+    });
+  });
+
+  test("stops the growing edge where the other edge starts", () => {
+    const state = reduceReviewState(createTestReviewState(), {
+      type: "expansion/set",
+      fileKey: "alpha",
+      gapId: "before:1",
+      top: 5,
+      bottom: 0,
+    });
+
+    const plan = planReviewIntent(state, {
+      type: "expansion/reveal",
+      fileKey: "alpha",
+      gapId: "before:1",
+      edge: "bottom",
+      lines: 20,
+    });
+
+    expect(plan.actions).toEqual([
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:1", top: 5, bottom: 4 },
+    ]);
+  });
+
+  test("rejects a reveal of no lines", () => {
+    for (const lines of [0, -3, 1.5]) {
+      expect(() =>
+        planReviewIntent(createTestReviewState(), {
+          type: "expansion/reveal",
+          fileKey: "alpha",
+          gapId: "before:1",
+          edge: "top",
+          lines,
+        }),
+      ).toThrow(ReviewIntentPlanningError);
+    }
+  });
+
+  test("reaches a partial patch's trailing gap once its source has loaded", () => {
+    const base = createTestReviewState(["alpha"]);
+    const partialState = {
+      ...base,
+      document: {
+        ...base.document,
+        files: base.document.files.map((file) => ({
+          ...file,
+          flags: { ...file.flags, partial: true },
+        })),
+      },
+    };
+    const intent = {
+      type: "expansion/reveal",
+      fileKey: "alpha",
+      gapId: "trailing:1",
+      edge: "top",
+      lines: 3,
+    } as const;
+    expect(() => planReviewIntent(partialState, intent)).toThrow(ReviewIntentPlanningError);
+
+    // Hunk 1 ends at new line 13; a 20-line source leaves lines 14-20 below it.
+    const loaded = reduceReviewState(partialState, {
+      type: "expansion/set-source-status",
+      fileKey: "alpha",
+      status: { kind: "loaded", text: Array.from({ length: 20 }, (_u, i) => `l${i}`).join("\n") },
+    });
+    expect(planReviewIntent(loaded, intent).outcome).toMatchObject({
+      top: 3,
+      newRange: [14, 20],
+      lineCount: 7,
+    });
+  });
+});
+
+describe("expansion/collapse-hunk", () => {
+  test("re-collapses only the edges the hunk owns", () => {
+    const state = [
+      { fileKey: "alpha", gapId: "before:1", top: 2, bottom: 3 },
+      { fileKey: "alpha", gapId: "before:2", top: 4, bottom: 5 },
+    ].reduce(
+      (current, gap) => reduceReviewState(current, { type: "expansion/set", ...gap }),
+      createTestReviewState([{ key: "alpha", hunkCount: 3 }]),
+    );
+
+    const plan = planReviewIntent(state, {
+      type: "expansion/collapse-hunk",
+      fileKey: "alpha",
+      hunkIndex: 1,
+    });
+
+    expect(plan.actions).toEqual([
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:1", top: 2, bottom: 0 },
+      { type: "expansion/set", fileKey: "alpha", gapId: "before:2", top: 0, bottom: 5 },
+    ]);
+    expect(plan.outcome).toEqual({
+      type: "expansion/collapsed",
+      fileKey: "alpha",
+      gapIds: ["before:1", "before:2"],
+    });
+  });
+
+  test("changes nothing for a hunk that revealed nothing", () => {
+    const state = reduceReviewState(createTestReviewState(), {
+      type: "expansion/set",
+      fileKey: "alpha",
+      gapId: "before:1",
+      top: 4,
+      bottom: 0,
+    });
+
+    const plan = planReviewIntent(state, {
+      type: "expansion/collapse-hunk",
+      fileKey: "alpha",
+      hunkIndex: 1,
+    });
+
+    expect(plan.actions).toEqual([]);
+    expect(plan.outcome).toEqual({ type: "expansion/collapsed", fileKey: "alpha", gapIds: [] });
   });
 });

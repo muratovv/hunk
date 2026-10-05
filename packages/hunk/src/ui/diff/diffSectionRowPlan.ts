@@ -1,4 +1,4 @@
-import { reviewExpansionSide } from "../../core/review/expansion";
+import { reviewExpansionSide, type ReviewGapReveal } from "../../core/review/expansion";
 import { DEFAULT_TAB_WIDTH } from "../../core/run/tabWidth";
 import { DEFAULT_HUNK_GAP } from "../../core/run/reviewGap";
 import type { DiffFile } from "../../core/changeset/model";
@@ -6,7 +6,11 @@ import type { LayoutMode } from "../../core/run/commandInputs";
 import type { VisibleAgentNote } from "../lib/agentAnnotations";
 import type { AppTheme } from "../themes";
 import { findMaxLineNumber, findMaxLineNumberInRows } from "./codeColumns";
-import { expandCollapsedRows, type FileSourceStatus } from "./expandCollapsedRows";
+import {
+  expandCollapsedRows,
+  loadedSourceLineCount,
+  type FileSourceStatus,
+} from "./expandCollapsedRows";
 import {
   buildSplitRows,
   buildUnifiedRows,
@@ -15,7 +19,7 @@ import {
 } from "./diffRows";
 import { buildReviewRenderPlan, type PlannedReviewRow } from "./reviewRenderPlan";
 
-const EMPTY_EXPANDED_GAP_KEYS: ReadonlySet<string> = new Set();
+const NO_REVEALS: ReadonlyMap<string, ReviewGapReveal> = new Map();
 const EMPTY_VISIBLE_AGENT_NOTES: VisibleAgentNote[] = [];
 
 export interface DiffSectionRowPlan {
@@ -24,7 +28,7 @@ export interface DiffSectionRowPlan {
 }
 
 export interface BuildDiffSectionRowPlanOptions {
-  expandedKeys?: ReadonlySet<string>;
+  reveals?: ReadonlyMap<string, ReviewGapReveal>;
   file: DiffFile | undefined;
   highlightedDiff?: HighlightedDiffCode | null;
   layout: Exclude<LayoutMode, "auto">;
@@ -44,15 +48,22 @@ function buildBaseRows(
   highlightedDiff: HighlightedDiffCode | null | undefined,
   theme: AppTheme,
   tabWidth: number,
+  sourceStatus: FileSourceStatus | undefined,
 ) {
+  // Loaded source is what sizes a partial patch's trailing gap.
+  const lineCount = loadedSourceLineCount(sourceStatus);
+  const trailingSourceLines =
+    lineCount === undefined
+      ? undefined
+      : { side: reviewExpansionSide(file.metadata.type), count: lineCount };
   return layout === "split"
-    ? buildSplitRows(file, highlightedDiff ?? null, theme, tabWidth)
-    : buildUnifiedRows(file, highlightedDiff ?? null, theme, tabWidth);
+    ? buildSplitRows(file, highlightedDiff ?? null, theme, tabWidth, trailingSourceLines)
+    : buildUnifiedRows(file, highlightedDiff ?? null, theme, tabWidth, trailingSourceLines);
 }
 
 /** Build the shared file-level diff plan consumed by rendering and geometry measurement. */
 export function buildDiffSectionRowPlan({
-  expandedKeys = EMPTY_EXPANDED_GAP_KEYS,
+  reveals = NO_REVEALS,
   file,
   highlightedDiff = null,
   layout,
@@ -71,10 +82,10 @@ export function buildDiffSectionRowPlan({
     };
   }
 
-  const baseRows = buildBaseRows(file, layout, highlightedDiff, theme, tabWidth);
+  const baseRows = buildBaseRows(file, layout, highlightedDiff, theme, tabWidth, sourceStatus);
   const rows = expandCollapsedRows(baseRows, {
     layout,
-    expandedKeys,
+    reveals,
     sourceLineSpans,
     sourceStatus,
     tabWidth,

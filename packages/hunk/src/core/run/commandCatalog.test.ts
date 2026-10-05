@@ -230,6 +230,41 @@ describe("app command catalog", () => {
     ).toEqual({ type: "expansion/toggle", fileKey: "alpha", gapId: "before:1" });
   });
 
+  test("lowers z / Z / x to the gaps bordering the selected hunk", () => {
+    const base = createTestReviewState([
+      { key: "alpha", sourceIdentity: "source:alpha", hunkCount: 3 },
+    ]);
+    const state = { ...base, selection: { fileKey: "alpha", hunkIndex: 1 } };
+    const lower = (id: string) => lowerAppCommandToReviewIntent(entry(id), { count: 1, state });
+
+    expect(lower("hunk.review.expandAboveHunk")).toEqual({
+      type: "expansion/reveal",
+      fileKey: "alpha",
+      gapId: "before:1",
+      edge: "bottom",
+      lines: 20,
+    });
+    expect(lower("hunk.review.expandBelowHunk")).toEqual({
+      type: "expansion/reveal",
+      fileKey: "alpha",
+      gapId: "before:2",
+      edge: "top",
+      lines: 20,
+    });
+    expect(lower("hunk.review.collapseHunkContext")).toEqual({
+      type: "expansion/collapse-hunk",
+      fileKey: "alpha",
+      hunkIndex: 1,
+    });
+  });
+
+  test("lowers z to nothing on a first hunk that starts the file", () => {
+    const state = createTestReviewState([{ key: "alpha", sourceIdentity: "source:alpha" }]);
+    expect(
+      lowerAppCommandToReviewIntent(entry("hunk.review.expandAboveHunk"), { count: 1, state }),
+    ).toBeUndefined();
+  });
+
   // Intent: an effect with no target is a no-op everywhere rather than one client's guess.
   test("lowers nothing when a semantic effect has nothing to act on", () => {
     expect(

@@ -396,7 +396,7 @@ describe("review render plan", () => {
     const file = createDiffFile("expanded", "expanded.ts", TWELVE_LINES_BEFORE, TWELVE_LINES_AFTER);
     const rows = expandCollapsedRows(buildSplitRows(file, null, theme), {
       layout: "split",
-      expandedKeys: new Set(["before:1"]),
+      reveals: new Map([["before:1", { top: Number.MAX_SAFE_INTEGER, bottom: 0 }]]),
       sourceStatus: { kind: "loaded", text: TWELVE_LINES_AFTER },
     });
     const note = createVisibleAgentNote(file.metadata.hunks, {

@@ -94,7 +94,11 @@ const HELP_SECTIONS: readonly HelpSectionSpec[] = [
         description: "sidebar / theme selector",
       },
       { commandIds: ["hunk.view.toggleAgentNotes"], description: "toggle AI notes" },
-      { commandIds: ["hunk.review.toggleHunkGap"], description: "toggle unchanged context" },
+      {
+        commandIds: ["hunk.review.expandAboveHunk", "hunk.review.expandBelowHunk"],
+        description: "more context above / below",
+      },
+      { commandIds: ["hunk.review.collapseHunkContext"], description: "hide revealed context" },
       {
         commandIds: [
           "hunk.view.toggleLineNumbers",
