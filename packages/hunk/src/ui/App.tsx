@@ -223,6 +223,12 @@ export function App({
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
   const [reviewVerticalStops, setReviewVerticalStops] = useState<ReviewVerticalStop[]>([]);
+  const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
+  const reviewTimeline = useReviewTimeline({
+    bootstrap,
+    onReloadSession,
+    onError: showSessionNotice,
+  });
   const review = useTerminalReview({
     files: reviewFiles,
     initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
@@ -232,6 +238,7 @@ export function App({
     sourceLabel: bootstrap.changeset.sourceLabel,
     stmlEnabled,
     userNotesSidecarPath: bootstrap.userNotesSidecarPath,
+    reviewView: reviewTimeline.timeline?.current ?? null,
   });
   // The producer plans brokered actions against the store this controller owns, so a
   // remote action and a key press reach the same state through the same intent path.
@@ -272,12 +279,6 @@ export function App({
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [storedFocusArea, setFocusArea] = useState<StoredFocusArea>("files");
-  const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
-  const reviewTimeline = useReviewTimeline({
-    bootstrap,
-    onReloadSession,
-    onError: showSessionNotice,
-  });
   // Keep an incompatible-daemon notice until the broker reconnects; timed notices must not clear it.
   const [daemonNoticeText, setDaemonNoticeText] = useState<string | null>(null);
   const { store: statusLineStore, snapshot: statusLineState } = useStatusLine({

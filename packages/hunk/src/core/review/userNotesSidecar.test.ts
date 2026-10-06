@@ -133,4 +133,19 @@ describe("serializeUserNotesSidecar", () => {
     expect(Object.keys(plain ?? {})).toEqual(legacyOrder);
     expect(Object.keys(withEdit ?? {})).toEqual([...legacyOrder, "updatedAt"]);
   });
+
+  test("round-trips a note's commit revision as its last field", () => {
+    const document = createTestReviewDocument([{ key: "alpha", path: "alpha.ts" }]);
+    const onCommit = legacyNote({ id: "user:c", side: "old", revision: "c".repeat(40) });
+    const sidecar = JSON.parse(JSON.stringify({ alpha: [legacyNote(), onCommit] }));
+
+    const { notes, unmatched, revisions } = seedUserNotesFromSidecar(document, sidecar);
+    expect([...revisions]).toEqual([["user:c", "c".repeat(40)]]);
+
+    const written = serializeUserNotesSidecar(document.files, notes, unmatched, (note) =>
+      revisions.get(note.id),
+    );
+    expect(JSON.stringify(written)).toBe(JSON.stringify(sidecar));
+    expect(Object.keys(written.alpha?.[1] ?? {}).at(-1)).toBe("revision");
+  });
 });

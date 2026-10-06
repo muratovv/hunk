@@ -238,6 +238,20 @@ export function reduceReviewState(state: ReviewState, action: ReviewAction): Rev
             activeNoteId: state.activeNoteId === action.noteId ? null : state.activeNoteId,
           };
     }
+    case "notes/set-user-resolutions": {
+      let changed = false;
+      const userNotes = state.userNotes.map((entry) => {
+        const resolution = action.resolutions.get(entry.note.id);
+        if (resolution === undefined || resolution === entry.resolution) return entry;
+        changed = true;
+        return { ...entry, resolution };
+      });
+      if (!changed) return state;
+      const activeHidden = userNotes.some(
+        (entry) => entry.note.id === state.activeNoteId && entry.resolution === "orphaned",
+      );
+      return { ...state, userNotes, activeNoteId: activeHidden ? null : state.activeNoteId };
+    }
     case "draft/start":
       return { ...state, draftNote: action.draft };
     case "draft/update":

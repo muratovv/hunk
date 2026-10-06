@@ -21,6 +21,8 @@ export interface SidecarUserNote {
   createdAt: string;
   updatedAt?: string;
   editable: true;
+  /** Commit whose content the note's side shows; absent means the working tree. */
+  revision?: string;
 }
 
 export type UserNotesSidecar = Record<string, SidecarUserNote[]>;
@@ -29,6 +31,8 @@ export interface SeededUserNotes {
   notes: ReviewStoredNote[];
   /** Entries no current file claims, kept verbatim so a later write never drops them. */
   unmatched: UserNotesSidecar;
+  /** Commit revision of each seeded note that names one, by note id. */
+  revisions: Map<string, string>;
 }
 
 function isLineRange(value: unknown): value is [number, number] {
@@ -55,7 +59,8 @@ function isSeedableSidecarNote(entry: unknown): entry is SidecarUserNote {
     Number.isInteger(note.hunkIndex) &&
     (note.oldRange === undefined || isLineRange(note.oldRange)) &&
     (note.newRange === undefined || isLineRange(note.newRange)) &&
-    (note.parentId === undefined || typeof note.parentId === "string")
+    (note.parentId === undefined || typeof note.parentId === "string") &&
+    (note.revision === undefined || typeof note.revision === "string")
   );
 }
 
@@ -105,6 +110,7 @@ export function seedUserNotesFromSidecar(
 ): SeededUserNotes {
   const notes: ReviewStoredNote[] = [];
   const unmatched: UserNotesSidecar = {};
+  const revisions = new Map<string, string>();
   const seededIds = new Set<string>();
   for (const [runtimeId, entries] of Object.entries(sidecar)) {
     for (const entry of entries) {
@@ -114,12 +120,13 @@ export function seedUserNotesFromSidecar(
       if (file && !seededIds.has(entry.id)) {
         seededIds.add(entry.id);
         notes.push(toStoredNote(file, entry));
+        if (entry.revision) revisions.set(entry.id, entry.revision);
       } else {
         (unmatched[runtimeId] ??= []).push(entry);
       }
     }
   }
-  return { notes, unmatched };
+  return { notes, unmatched, revisions };
 }
 
 export type SidecarFileAddress = Pick<ReviewFileV1, "key" | "runtimeId" | "path">;
@@ -134,6 +141,7 @@ export function serializeUserNotesSidecar(
   files: readonly SidecarFileAddress[],
   notes: readonly ReviewStoredNote[],
   unmatched: UserNotesSidecar,
+  revisionOf: (note: ReviewStoredNote["note"]) => string | undefined = () => undefined,
 ): UserNotesSidecar {
   const byKey = new Map(files.map((file) => [file.key, file]));
   const sidecar: UserNotesSidecar = {};
@@ -143,6 +151,7 @@ export function serializeUserNotesSidecar(
       throw new Error(`No file address is known for review note ${note.id}.`);
     }
     const { side, line } = reviewNoteAnchorLine(note);
+    const revision = revisionOf(note);
     // Key order mirrors the fork-main writer so both builds emit identical JSON.
     (sidecar[file.runtimeId] ??= []).push({
       source: "user",
@@ -159,6 +168,7 @@ export function serializeUserNotesSidecar(
       ...(note.parentId ? { parentId: note.parentId } : {}),
       createdAt: note.createdAt ?? "",
       ...(note.updatedAt ? { updatedAt: note.updatedAt } : {}),
+      ...(revision ? { revision } : {}),
     } as SidecarUserNote);
   }
   for (const [runtimeId, entries] of Object.entries(unmatched)) {
