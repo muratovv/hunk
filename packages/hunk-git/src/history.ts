@@ -10,6 +10,8 @@ import {
   type ExtensionVcsHistoryRangeSelection,
   type ExtensionVcsHistoryReviewOptions,
   type ExtensionVcsHistorySource,
+  type ExtensionVcsTimeline,
+  type ExtensionVcsTimelineInput,
 } from "hunkdiff/extension";
 
 const HISTORY_FIELDS_PER_COMMIT = 8;
@@ -307,6 +309,42 @@ export async function loadGitReviewCommits(
     options,
   );
   return parseGitHistory(result.stdout);
+}
+
+/**
+ * Load the first-parent line from `from` to `to` for review re-scoping.
+ *
+ * `--ancestry-path` keeps only descendants of `from`, so after the base branch is merged in, the
+ * branch's earlier commits fold into the merge instead of producing steps the base cannot diff to.
+ */
+export async function loadGitTimeline(
+  input: ExtensionVcsTimelineInput,
+  options: GitHistoryOptions,
+): Promise<ExtensionVcsTimeline | null> {
+  const from = requireRevision(input.from);
+  const to = requireRevision(input.to);
+  const ancestry = await runGitPlanningQuery(
+    ["merge-base", "--is-ancestor", from, to],
+    options,
+    [0, 1],
+  );
+  if (ancestry.exitCode === 1) return null;
+  const [base] = parseGitHistory(
+    (await runGitPlanningQuery(buildGitHistoryArgs({ revision: from, maxCount: 1 }), options))
+      .stdout,
+  );
+  if (!base) return null;
+  const line = await runGitPlanningQuery(
+    [
+      ...buildGitHistoryArgs({ firstParent: true, maxCount: input.maxCount + 1 }),
+      "--ancestry-path",
+      `${base.revisionId}..${to}`,
+    ],
+    options,
+  );
+  const commits = parseGitHistory(line.stdout, new Map(), true);
+  if (commits.length > input.maxCount) return null;
+  return { base, commits: commits.reverse() };
 }
 
 /** Count commits in one provider-owned range without loading their messages. */

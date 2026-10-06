@@ -178,6 +178,8 @@ export type {
   ExtensionVcsShowInput,
   ExtensionVcsSkippedFile,
   ExtensionVcsSkippedFileReason,
+  ExtensionVcsTimeline,
+  ExtensionVcsTimelineInput,
   ExtensionVcsStashShowInput,
   ExtensionVcsWatchPlan,
   ExtensionVcsWatchTarget,

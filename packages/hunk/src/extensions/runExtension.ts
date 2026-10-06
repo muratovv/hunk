@@ -30,6 +30,8 @@ import { toInternalVcsPatchResult } from "./vcsPatchResult";
 import type {
   ExtensionVcsHistoryCommit,
   ExtensionVcsHistoryRangeSelection,
+  ExtensionVcsTimeline,
+  ExtensionVcsTimelineInput,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistorySource,
   ExtensionVcsOperation,
@@ -325,6 +327,21 @@ function normalizeHistoryCommit(value: unknown): ExtensionVcsHistoryCommit {
 }
 
 /** Copy and validate both immutable endpoints in one history range selection. */
+/** Validate one provider timeline, keeping it within the requested commit bound. */
+function normalizeTimeline(value: unknown, maxCount: number): ExtensionVcsTimeline | null {
+  if (value === null) return null;
+  if (!isPlainObject(value))
+    throw new Error("VCS history loadTimeline() must return an object or null.");
+  const fields = snapshotProperties(value, ["base", "commits"]);
+  if (!Array.isArray(fields.commits) || fields.commits.length > maxCount) {
+    throw new Error("VCS history loadTimeline() must return at most maxCount commits.");
+  }
+  return {
+    base: normalizeHistoryCommit(fields.base),
+    commits: fields.commits.map((commit) => normalizeHistoryCommit(commit)),
+  };
+}
+
 function normalizeHistoryRangeSelection(value: unknown): ExtensionVcsHistoryRangeSelection {
   if (!isPlainObject(value)) {
     throw new Error("VCS history range selection must be an object.");
@@ -511,17 +528,19 @@ export function toInternalVcsAdapter(
 
   const history = adapterFields.history;
   const historyFields = isPlainObject(history)
-    ? snapshotProperties(history, ["open", "planReview", "planRangeReview"])
+    ? snapshotProperties(history, ["open", "planReview", "planRangeReview", "loadTimeline"])
     : undefined;
   const historyOpen = historyFields?.open;
   const historyPlanReview = historyFields?.planReview;
   const historyPlanRangeReview = historyFields?.planRangeReview;
+  const historyLoadTimeline = historyFields?.loadTimeline;
   if (
     history !== undefined &&
     (!isPlainObject(history) ||
       typeof historyOpen !== "function" ||
       typeof historyPlanReview !== "function" ||
-      (historyPlanRangeReview !== undefined && typeof historyPlanRangeReview !== "function"))
+      (historyPlanRangeReview !== undefined && typeof historyPlanRangeReview !== "function") ||
+      (historyLoadTimeline !== undefined && typeof historyLoadTimeline !== "function"))
   ) {
     throw new Error("registerVcsAdapter history must provide open() and planReview() functions.");
   }
@@ -533,6 +552,9 @@ export function toInternalVcsAdapter(
   const planHistoryRangeReview = historyPlanRangeReview as NonNullable<
     ExtensionVcsAdapter["history"]
   >["planRangeReview"];
+  const loadHistoryTimeline = historyLoadTimeline as NonNullable<
+    ExtensionVcsAdapter["history"]
+  >["loadTimeline"];
   const detect = adapterFields.detect;
   if (typeof detect !== "function") {
     throw new Error("registerVcsAdapter requires a detect() function.");
@@ -640,6 +662,21 @@ export function toInternalVcsAdapter(
                 );
               }
               return action;
+            } catch (error) {
+              throw toUserFacingError(error);
+            }
+          },
+        }),
+        ...(typeof loadHistoryTimeline === "function" && {
+          async loadTimeline(
+            input: ExtensionVcsTimelineInput,
+            context: Parameters<NonNullable<typeof loadHistoryTimeline>>[1],
+          ) {
+            try {
+              return normalizeTimeline(
+                await loadHistoryTimeline.call(history, { ...input }, context),
+                input.maxCount,
+              );
             } catch (error) {
               throw toUserFacingError(error);
             }

@@ -24,6 +24,7 @@ import {
 import {
   countGitReviewCommits,
   loadGitReviewCommits,
+  loadGitTimeline,
   openGitHistory,
   planGitHistoryRangeReview,
 } from "./history";
@@ -371,6 +372,9 @@ export function createGitVcsAdapter({
       },
       planRangeReview(selection, { cwd, signal }, options?: { parentRevisionId?: string }) {
         return planGitHistoryRangeReview(selection, { cwd, gitExecutable, signal }, options);
+      },
+      loadTimeline(input, { cwd, signal }) {
+        return loadGitTimeline(input, { cwd, gitExecutable, signal });
       },
     },
     operations: {

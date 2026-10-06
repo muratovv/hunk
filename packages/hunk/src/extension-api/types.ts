@@ -880,6 +880,23 @@ export type ExtensionVcsHistoryRangeReviewAction = Extract<
   { kind: "revision-range" }
 >;
 
+/** Endpoints of one review-timeline lookup. */
+export interface ExtensionVcsTimelineInput {
+  /** Revision the timeline starts at; it becomes the timeline's base. */
+  from: string;
+  /** Revision the timeline ends at, inclusive. */
+  to: string;
+  /** Most commits allowed after `from`; a longer line resolves null. */
+  maxCount: number;
+}
+
+/** One linear commit line a review can be re-scoped along. */
+export interface ExtensionVcsTimeline {
+  base: ExtensionVcsHistoryCommit;
+  /** Descendants of `base` up to and including the end revision, oldest first. */
+  commits: ExtensionVcsHistoryCommit[];
+}
+
 /** Optional read-only history capability implemented independently of review operations. */
 export interface ExtensionVcsHistoryCapability {
   open(
@@ -908,6 +925,17 @@ export interface ExtensionVcsHistoryCapability {
     context: ExtensionVcsLoadContext,
     options?: ExtensionVcsHistoryReviewOptions,
   ): ExtensionVcsHistoryRangeReviewAction | Promise<ExtensionVcsHistoryRangeReviewAction>;
+  /**
+   * List the commits a review of `from` against `to` can be re-scoped across.
+   *
+   * Providers return one linear line (Git follows first parents and folds a merge into one step).
+   * Resolve null when `from` is not an ancestor of `to` or the line exceeds `maxCount`. Older
+   * providers may omit this, and Hunk then offers no range slider.
+   */
+  loadTimeline?(
+    input: ExtensionVcsTimelineInput,
+    context: ExtensionVcsLoadContext,
+  ): Promise<ExtensionVcsTimeline | null>;
 }
 
 /** Stash review request, as extension adapters receive it. */
