@@ -1,6 +1,7 @@
 import { HUNK_VENDOR_EXTENSION_ID } from "../../../extensionIds";
 import type { ExtensionFactory } from "../../../types";
 import { FlexFileSidebar } from "./FileSidebars";
+import { registerRangeSliderMode } from "./rangeSlider/mode";
 
 /**
  * Hunk's file-navigation sidebar ships as a bundled extension.
@@ -34,6 +35,7 @@ const registerBundledSidebar: ExtensionFactory = (hunk) => {
     defaultOpen: true,
     component: FlexFileSidebar,
   });
+  registerRangeSliderMode(hunk);
 };
 
 export default registerBundledSidebar;

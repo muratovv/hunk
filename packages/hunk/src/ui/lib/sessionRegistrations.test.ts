@@ -9,6 +9,7 @@ import {
 } from "../../extensions/types";
 import {
   buildSessionCommands,
+  buildSessionKeyboardModes,
   buildSessionLineHighlighters,
   isBundledExtensionId,
 } from "./sessionRegistrations";
@@ -111,5 +112,26 @@ describe("isBundledExtensionId", () => {
     expect(isBundledExtensionId("git", registry)).toBe(true);
     expect(isBundledExtensionId("acme", registry)).toBe(false);
     expect(isBundledExtensionId("missing", registry)).toBe(false);
+  });
+});
+
+describe("buildSessionKeyboardModes", () => {
+  test("offers bundled modes beside user modes, bundled first", () => {
+    const mode = { title: "Mode", onKey: () => "pass" as const };
+    const bundled = createTestRegistry(
+      HUNK_VENDOR_EXTENSION_ID,
+      (hunk) => hunk.registerKeyboardMode({ id: "range", ...mode }),
+      "bundled",
+    );
+    const user = createTestRegistry("acme", (hunk) =>
+      hunk.registerKeyboardMode({ id: "normal", ...mode }),
+    );
+
+    expect(
+      buildSessionKeyboardModes(user, bundled).map(
+        (entry) => `${entry.extensionId}:${entry.mode.id}`,
+      ),
+    ).toEqual(["hunk:range", "acme:normal"]);
+    expect(buildSessionKeyboardModes(undefined, bundled)).toHaveLength(1);
   });
 });

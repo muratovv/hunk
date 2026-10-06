@@ -30,11 +30,7 @@ import {
 } from "../core/review/selectors";
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
 import { sanitizeTerminalLine } from "../lib/terminalText";
-import {
-  resolveExtensionFileViews,
-  resolveExtensionKeyboardModes,
-  resolveExtensionSessionOptions,
-} from "../extensions/apply";
+import { resolveExtensionFileViews, resolveExtensionSessionOptions } from "../extensions/apply";
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
@@ -98,6 +94,7 @@ import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/ex
 import { createExtensionReviewReloadControls } from "./lib/extensionReviewReload";
 import {
   buildSessionCommands,
+  buildSessionKeyboardModes,
   buildSessionLineHighlighters,
   isBundledExtensionId,
 } from "./lib/sessionRegistrations";
@@ -376,7 +373,7 @@ export function App({
     [extensions],
   );
   const sessionKeyboardModes = useMemo(
-    () => (extensions ? resolveExtensionKeyboardModes(extensions.registry).modes : []),
+    () => buildSessionKeyboardModes(extensions?.registry),
     [extensions],
   );
   // Bundled highlighters and commands compose ahead of the user registry's, so
