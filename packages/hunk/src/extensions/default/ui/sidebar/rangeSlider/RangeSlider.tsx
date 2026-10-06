@@ -1,18 +1,22 @@
 import { MouseButton, type BoxRenderable, type MouseEvent as TuiMouseEvent } from "@opentui/core";
 import { useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
-import type { ExtensionPaneTheme } from "../../../../../extension-api/types";
+import type {
+  ExtensionPaneActions,
+  ExtensionPaneTheme,
+  ExtensionReviewTimeline,
+} from "../../../../../extension-api/types";
 import { fitText, padText } from "../../../../../ui/lib/text";
 import {
-  fullRangeSelection,
   handleNearest,
   placeHandle,
+  rangeSelectionFromTimeline,
+  rangeStopsFromTimeline,
   rangeTrackCells,
   stopIndexAtColumn,
   type RangeHandle,
-  type RangeStop,
   type RangeTrackRole,
 } from "./model";
-import { rangeSliderStore, type RangeSliderStore } from "./store";
+import { rangeSliderStore, sameStops, type RangeSliderStore } from "./store";
 
 /** Rows the slider occupies at the bottom of the files pane. */
 export const RANGE_SLIDER_HEIGHT = 4;
@@ -20,11 +24,17 @@ export const RANGE_SLIDER_HEIGHT = 4;
 /** Columns left free at the track's right end: the pane divider's grab zone overlaps them. */
 const TRACK_RIGHT_GUTTER = 2;
 
+/** Quiet time after the last handle move before the diff re-scopes. */
+export const RANGE_RESCOPE_DEBOUNCE_MS = 250;
+
 export interface RangeSliderProps {
-  stops: readonly RangeStop[];
+  timeline: ExtensionReviewTimeline;
+  rescopeReview: ExtensionPaneActions["rescopeReview"];
+  notify: ExtensionPaneActions["notify"];
   theme: ExtensionPaneTheme;
   width: number;
   store?: RangeSliderStore;
+  debounceMs?: number;
 }
 
 /** Map a track role to its paint color. */
@@ -58,26 +68,57 @@ function trackRuns(cells: ReturnType<typeof rangeTrackCells>) {
  * Render the commit-range slider docked under the file list.
  *
  * Clicking the track grabs the nearer handle and drags it; clicking a from/to row makes that
- * handle active for the keyboard mode. The selection is display-only for now: nothing reloads
- * the diff when it changes.
+ * handle active for the keyboard mode. Once the handles rest for the debounce interval, the review
+ * re-scopes to their range; a refused or failed re-scope snaps them back to the range on screen.
  */
 export function RangeSlider({
-  stops,
+  timeline,
+  rescopeReview,
+  notify,
   theme,
   width,
   store = rangeSliderStore,
+  debounceMs = RANGE_RESCOPE_DEBOUNCE_MS,
 }: RangeSliderProps): ReactNode {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const trackRef = useRef<BoxRenderable | null>(null);
   const draggingRef = useRef<RangeHandle | null>(null);
+  // Stops depend on the line only, so a re-scope that moves `current` keeps the user's selection.
+  const stops = useMemo(
+    () => rangeStopsFromTimeline(timeline),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- the line, not `current`, defines stops
+    [timeline.base, timeline.commits, timeline.workingTree],
+  );
+  const timelineRef = useRef(timeline);
+  timelineRef.current = timeline;
 
   useEffect(() => {
-    store.setStops(stops);
+    store.setStops(stops, rangeSelectionFromTimeline(timelineRef.current, stops));
+    return () => store.setStops([]);
   }, [store, stops]);
 
-  // Until the store adopts this pane's stops, paint the full range instead of out-of-range indexes.
-  const selection =
-    state.stops.length === stops.length ? state.selection : fullRangeSelection(stops.length);
+  const adopted = sameStops(state.stops, stops);
+  const target = adopted ? state.selection : undefined;
+  const targetFrom = target ? stops[target.from]?.revision : undefined;
+  const targetTo = target ? stops[target.to]?.revision : undefined;
+  useEffect(() => {
+    if (targetFrom === undefined || targetFrom === null || targetTo === undefined) return;
+    const { current } = timelineRef.current;
+    if (current.from === targetFrom && current.to === targetTo) return;
+    const timer = setTimeout(() => {
+      void rescopeReview(targetFrom, targetTo).then((result) => {
+        if (result.ok) return;
+        notify(`Commit range not applied: ${result.detail}`, "warning");
+        store.updateSelection((selection) =>
+          rangeSelectionFromTimeline(timelineRef.current, stops, selection.active),
+        );
+      });
+    }, debounceMs);
+    return () => clearTimeout(timer);
+  }, [debounceMs, notify, rescopeReview, stops, store, targetFrom, targetTo]);
+
+  // Until the store adopts this pane's stops, paint the range on screen.
+  const selection = target ?? rangeSelectionFromTimeline(timeline, stops);
   const innerWidth = Math.max(4, width - 1 - TRACK_RIGHT_GUTTER);
   const cells = useMemo(
     () => rangeTrackCells(stops.length, selection, innerWidth),

@@ -2,8 +2,8 @@
  * Holds the commit-range slider state that the files pane paints and the range keyboard mode edits.
  *
  * Bundled factories run once per process, so the mode cannot reach pane props; the pane publishes
- * its stops here and both sides read one snapshot. A new stop list resets the selection to the full
- * range, while republishing the same stops keeps it.
+ * its stops here and both sides read one snapshot. A new stop list adopts the selection the pane
+ * passes with it, while republishing the same stops keeps the user's selection.
  */
 import { fullRangeSelection, type RangeSelection, type RangeStop } from "./model";
 
@@ -17,13 +17,13 @@ export interface RangeSliderState {
 export interface RangeSliderStore {
   getSnapshot(): RangeSliderState;
   subscribe(listener: () => void): () => void;
-  setStops(stops: readonly RangeStop[]): void;
+  setStops(stops: readonly RangeStop[], selection?: RangeSelection): void;
   updateSelection(update: (selection: RangeSelection, stopCount: number) => RangeSelection): void;
   setEditing(editing: boolean): void;
 }
 
 /** Report whether two stop lists name the same stops in the same order. */
-function sameStops(left: readonly RangeStop[], right: readonly RangeStop[]) {
+export function sameStops(left: readonly RangeStop[], right: readonly RangeStop[]) {
   return left.length === right.length && left.every((stop, index) => stop.id === right[index]?.id);
 }
 
@@ -42,9 +42,9 @@ export function createRangeSliderStore(): RangeSliderStore {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    setStops(stops) {
+    setStops(stops, selection = fullRangeSelection(stops.length)) {
       if (sameStops(state.stops, stops)) return;
-      commit({ ...state, stops, selection: fullRangeSelection(stops.length) });
+      commit({ ...state, stops, selection });
     },
     updateSelection(update) {
       const selection = update(state.selection, state.stops.length);

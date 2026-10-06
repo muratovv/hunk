@@ -20,20 +20,16 @@ import {
   FileGroupHeader,
   FileListItem,
 } from "../../../../ui/components/panes/FileListItem";
-import { rangeStopsFromReview } from "./rangeSlider/model";
 import { RANGE_SLIDER_HEIGHT, RangeSlider } from "./rangeSlider/RangeSlider";
-
-/** The commit-range slider is an opt-in experiment until it can re-scope the diff. */
-const RANGE_SLIDER_ENABLED = process.env.HUNK_RANGE_SLIDER === "1";
 
 /** Keep at least this many file rows before docking the range slider under them. */
 const MIN_FILE_ROWS_WITH_RANGE_SLIDER = 6;
 
 export type BuiltInSidebarProps = Omit<
   ExtensionPaneProps,
-  "placement" | "height" | "currentLine" | "review"
+  "placement" | "height" | "currentLine" | "review" | "timeline"
 > &
-  Partial<Pick<ExtensionPaneProps, "placement" | "height" | "currentLine" | "review">>;
+  Partial<Pick<ExtensionPaneProps, "placement" | "height" | "currentLine" | "review" | "timeline">>;
 
 type FileSidebarVariantProps = Pick<
   BuiltInSidebarProps,
@@ -184,7 +180,7 @@ export function FlexFileSidebar({
   theme,
   width,
   height,
-  review,
+  timeline,
   actions,
 }: BuiltInSidebarProps): ReactNode {
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -198,10 +194,8 @@ export function FlexFileSidebar({
   // Mirrors the host layout: one column of row highlight plus row padding.
   const textWidth = Math.max(8, width - 2);
   const mode = resolveFileSidebarMode(textWidth);
-  const rangeStops = useMemo(() => rangeStopsFromReview(review ?? null), [review]);
   const showRangeSlider =
-    RANGE_SLIDER_ENABLED &&
-    rangeStops.length >= 2 &&
+    timeline != null &&
     (height ?? terminal.height) >= RANGE_SLIDER_HEIGHT + MIN_FILE_ROWS_WITH_RANGE_SLIDER;
   const variantProps: FileSidebarVariantProps = {
     actions,
@@ -337,7 +331,15 @@ export function FlexFileSidebar({
           )}
         </scrollbox>
       </box>
-      {showRangeSlider && <RangeSlider stops={rangeStops} theme={theme} width={width} />}
+      {showRangeSlider && timeline && (
+        <RangeSlider
+          timeline={timeline}
+          rescopeReview={actions.rescopeReview}
+          notify={actions.notify}
+          theme={theme}
+          width={width}
+        />
+      )}
     </box>
   );
 }

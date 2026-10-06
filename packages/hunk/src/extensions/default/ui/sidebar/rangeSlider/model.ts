@@ -5,11 +5,13 @@
  * collapses to an empty range. Everything here is pure; the pane and the keyboard mode share it
  * through the slider store.
  */
-import type { ExtensionReviewDescriptor } from "../../../../../extension-api/types";
+import type { ExtensionReviewTimeline } from "../../../../../extension-api/types";
 
-/** One position the handles can rest on: a base, a commit, or the working tree. */
+/** One position the handles can rest on: the base, a commit, or the working tree. */
 export interface RangeStop {
   readonly id: string;
+  /** Revision this stop names; null for the working tree. */
+  readonly revision: string | null;
   /** Short identity painted beside a handle, e.g. a short sha or `WIP`. */
   readonly label: string;
   /** One-line description, e.g. the commit subject. */
@@ -25,35 +27,36 @@ export interface RangeSelection {
   readonly active: RangeHandle;
 }
 
-/** Placeholder stops for reviews whose provider reports no commit list, e.g. a live worktree. */
-export const DEMO_RANGE_STOPS: readonly RangeStop[] = [
-  { id: "demo:base", label: "base", detail: "merge-base (demo)" },
-  { id: "demo:1", label: "1a2b3c4", detail: "demo: scaffold the feature" },
-  { id: "demo:2", label: "5d6e7f8", detail: "demo: wire the store" },
-  { id: "demo:3", label: "9a0b1c2", detail: "demo: render the track" },
-  { id: "demo:4", label: "3d4e5f6", detail: "demo: keyboard mode" },
-  { id: "demo:wip", label: "WIP", detail: "working tree (demo)" },
-];
-
-/** Shorten a full hex revision; keep ref names as they are. */
-function shortRevision(revision: string) {
-  return /^[0-9a-f]{12,}$/i.test(revision) ? revision.slice(0, 7) : revision;
+/** List the timeline's positions oldest-left: base, each commit, then the working tree. */
+export function rangeStopsFromTimeline(timeline: ExtensionReviewTimeline): RangeStop[] {
+  const commitStop = (
+    commit: ExtensionReviewTimeline["base"],
+    detail = commit.title,
+  ): RangeStop => ({
+    id: commit.revision,
+    revision: commit.revision,
+    label: commit.displayRevision,
+    detail,
+  });
+  return [
+    commitStop(timeline.base, `base · ${timeline.base.title}`),
+    ...timeline.commits.map((commit) => commitStop(commit)),
+    ...(timeline.workingTree
+      ? [{ id: "working-tree", revision: null, label: "WIP", detail: "working tree" }]
+      : []),
+  ];
 }
 
-/** Derive slider stops from the review descriptor, falling back to demo stops. */
-export function rangeStopsFromReview(review: ExtensionReviewDescriptor | null): RangeStop[] {
-  if (review?.kind !== "comparison" || !review.commits?.length) return [...DEMO_RANGE_STOPS];
-  const base: RangeStop = {
-    id: `base:${review.base}`,
-    label: shortRevision(review.base),
-    detail: "base",
-  };
-  const commits = [...review.commits].reverse().map((commit) => ({
-    id: commit.revision,
-    label: commit.displayRevision,
-    detail: commit.title,
-  }));
-  return [base, ...commits];
+/** Place the handles on the timeline's current range, falling back to the full range. */
+export function rangeSelectionFromTimeline(
+  timeline: ExtensionReviewTimeline,
+  stops: readonly RangeStop[],
+  active: RangeHandle = "from",
+): RangeSelection {
+  const from = stops.findIndex((stop) => stop.revision === timeline.current.from);
+  const to = stops.findIndex((stop) => stop.revision === timeline.current.to);
+  if (from < 0 || to <= from) return fullRangeSelection(stops.length);
+  return { from, to, active };
 }
 
 /** Return the selection spanning every stop. */

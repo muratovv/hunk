@@ -884,8 +884,8 @@ export type ExtensionVcsHistoryRangeReviewAction = Extract<
 export interface ExtensionVcsTimelineInput {
   /** Revision the timeline starts at; it becomes the timeline's base. */
   from: string;
-  /** Revision the timeline ends at, inclusive. */
-  to: string;
+  /** Revision the timeline ends at, inclusive; omit for the commit the working copy is on. */
+  to?: string;
   /** Most commits allowed after `from`; a longer line resolves null. */
   maxCount: number;
 }
@@ -1297,6 +1297,13 @@ export interface ExtensionPaneActions extends ExtensionReviewNavigation {
   copyText(text: string): boolean;
   /** Show one toast, attributed to the owning extension. */
   notify(message: string, type?: ExtensionNotifyType): void;
+  /**
+   * Re-scope the review to `from..to` along the pane's `timeline` (`to: null` = working tree).
+   *
+   * Both revisions must be timeline positions with `from` before `to`; anything else resolves
+   * `"unavailable"`. The reload keeps the mounted UI and serializes with every other reload.
+   */
+  rescopeReview(from: string, to: string | null): Promise<ExtensionReviewReloadResult>;
 }
 /** @deprecated Use ExtensionPaneActions. */
 export type ExtensionSidebarActions = ExtensionPaneActions;
@@ -1384,6 +1391,8 @@ export interface ExtensionPaneAvailabilityContext {
 export interface ExtensionPaneProps {
   /** Immutable review-source metadata, or null for ordinary reviews. */
   readonly review: ExtensionReviewDescriptor | null;
+  /** Commit line the review can be re-scoped along, or null when it has none. */
+  readonly timeline: ExtensionReviewTimeline | null;
   readonly files: readonly ExtensionDiffFile[];
   readonly selectedFileId: string | null;
   readonly selectedHunkIndex: number | null;
@@ -1575,6 +1584,20 @@ export interface ExtensionComparisonReviewDescriptor extends ExtensionReviewDesc
   readonly commitCount?: number;
   /** Newest-first commit summaries for compact review-info presentation. */
   readonly commits?: readonly ExtensionComparisonCommitDescriptor[];
+}
+
+/**
+ * The commit line the mounted review can be re-scoped along, and the range it shows now.
+ *
+ * Positions run from `base` through `commits` (oldest first) and, when `workingTree` is true, end at
+ * the working tree. The line belongs to the review's launch input and survives re-scoping.
+ */
+export interface ExtensionReviewTimeline {
+  readonly base: ExtensionComparisonCommitDescriptor;
+  readonly commits: readonly ExtensionComparisonCommitDescriptor[];
+  readonly workingTree: boolean;
+  /** Revisions bounding the diff on screen; `to: null` is the working tree. */
+  readonly current: { readonly from: string; readonly to: string | null };
 }
 
 /** Bounded provider-neutral metadata describing a delegated or history-selected review. */

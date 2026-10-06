@@ -6,6 +6,8 @@ import type {
   ExtensionVcsHistoryInput,
   ExtensionVcsHistoryRangeReviewAction,
   ExtensionVcsHistoryRangeSelection,
+  ExtensionVcsTimeline,
+  ExtensionVcsTimelineInput,
   ExtensionVcsHistoryReviewAction,
   ExtensionVcsHistoryReviewOptions,
 } from "../../extension-api/types";
@@ -208,6 +210,15 @@ export async function planVcsHistoryRangeReview(
     ]);
   }
   return await adapter.history.planRangeReview(selection, context, options);
+}
+
+/** Load the provider's re-scoping timeline, or null when the provider offers none. */
+export async function loadVcsTimeline(
+  adapter: VcsAdapter,
+  input: ExtensionVcsTimelineInput,
+  context: VcsLoadContext,
+): Promise<ExtensionVcsTimeline | null> {
+  return (await adapter.history?.loadTimeline?.(input, context)) ?? null;
 }
 
 /** Build an adapter event plan, falling back to signature polling. */

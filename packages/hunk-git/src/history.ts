@@ -322,7 +322,7 @@ export async function loadGitTimeline(
   options: GitHistoryOptions,
 ): Promise<ExtensionVcsTimeline | null> {
   const from = requireRevision(input.from);
-  const to = requireRevision(input.to);
+  const to = requireRevision(input.to ?? "HEAD");
   const ancestry = await runGitPlanningQuery(
     ["merge-base", "--is-ancestor", from, to],
     options,

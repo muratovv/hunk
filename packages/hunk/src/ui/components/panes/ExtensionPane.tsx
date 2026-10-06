@@ -78,6 +78,7 @@ class ExtensionPaneErrorBoundary extends Component<
 export interface ExtensionPaneHostProps {
   registered: RegisteredPane;
   review?: ExtensionPaneProps["review"];
+  timeline?: ExtensionPaneProps["timeline"];
   files: DiffFile[];
   fileViews: ExtensionDiffFile[];
   selectedFileId: string | null;
@@ -94,6 +95,7 @@ export interface ExtensionPaneHostProps {
   onSelectFile: (fileId: string) => void;
   onSelectHunk: (fileId: string, hunkIndex: number) => void;
   onRevealLine: (fileId: string, side: "old" | "new", line: number) => "line" | "hunk" | "none";
+  onRescopeReview?: ExtensionPaneActions["rescopeReview"];
   onRenderFailure?: () => void;
 }
 
@@ -101,6 +103,7 @@ export interface ExtensionPaneHostProps {
 function ExtensionPaneHostView({
   registered,
   review = null,
+  timeline = null,
   files,
   fileViews,
   selectedFileId,
@@ -117,6 +120,7 @@ function ExtensionPaneHostView({
   onSelectFile,
   onSelectHunk,
   onRevealLine,
+  onRescopeReview,
   onRenderFailure,
 }: ExtensionPaneHostProps) {
   const { extensionId } = registered;
@@ -124,8 +128,16 @@ function ExtensionPaneHostView({
   // Selection rerenders the pane host, but it does not replace the capabilities these callbacks
   // represent. Keep the public actions stable so memoized extension rows do not all repaint when
   // only the selected file changed; ref indirection still invokes the latest host generation.
-  const actionTargetsRef = useRef({ notify, onCopyText, onSelectFile, onSelectHunk, onRevealLine });
-  actionTargetsRef.current = { notify, onCopyText, onSelectFile, onSelectHunk, onRevealLine };
+  const actionTargets = {
+    notify,
+    onCopyText,
+    onSelectFile,
+    onSelectHunk,
+    onRevealLine,
+    onRescopeReview,
+  };
+  const actionTargetsRef = useRef(actionTargets);
+  actionTargetsRef.current = actionTargets;
   const actions = useMemo<ExtensionPaneActions>(
     () =>
       Object.freeze({
@@ -145,12 +157,23 @@ function ExtensionPaneHostView({
         notify(message: string, type: ExtensionNotifyType = "info") {
           actionTargetsRef.current.notify(`${extensionId}: ${message}`, type);
         },
+        async rescopeReview(from: string, to: string | null) {
+          const rescope = actionTargetsRef.current.onRescopeReview;
+          return rescope
+            ? rescope(from, to)
+            : ({
+                ok: false,
+                reason: "unavailable",
+                detail: "Re-scoping is not available here.",
+              } as const);
+        },
       }),
     [extensionId, files],
   );
   const View = registered.pane.component as (props: ExtensionPaneProps) => ReactNode;
   const viewProps: ExtensionPaneProps = {
     review,
+    timeline,
     files: fileViews,
     selectedFileId,
     selectedHunkIndex,
@@ -218,6 +241,7 @@ export const ExtensionPaneHost = memo(
   (previous, next) =>
     previous.registered === next.registered &&
     previous.review === next.review &&
+    previous.timeline === next.timeline &&
     previous.files.length === next.files.length &&
     previous.files.every((file, index) => file === next.files[index]) &&
     previous.selectedFileId === next.selectedFileId &&

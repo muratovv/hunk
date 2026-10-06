@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { createTestReviewTimeline } from "../../../../../../../../test/helpers/review-timeline-helpers";
 import {
-  DEMO_RANGE_STOPS,
   fullRangeSelection,
   handleNearest,
   moveActiveHandle,
   placeHandle,
+  rangeSelectionFromTimeline,
   rangeStopColumns,
-  rangeStopsFromReview,
+  rangeStopsFromTimeline,
   rangeTrackCells,
   shiftRange,
   stopIndexAtColumn,
@@ -14,23 +15,31 @@ import {
 } from "./model";
 
 describe("range slider stops", () => {
-  test("fall back to demo stops when the review carries no commit list", () => {
-    expect(rangeStopsFromReview(null)).toEqual([...DEMO_RANGE_STOPS]);
+  test("run base, each commit oldest first, then the working tree", () => {
+    const stops = rangeStopsFromTimeline(createTestReviewTimeline(["one", "two"]));
+    expect(stops.map((stop) => stop.label)).toEqual(["bbbbbbb", "1111111", "2222222", "WIP"]);
+    expect(stops.at(-1)?.revision).toBeNull();
+    expect(stops[0]?.detail).toContain("fork point");
   });
 
-  test("order a comparison's newest-first commits oldest-left after the base", () => {
-    const stops = rangeStopsFromReview({
-      kind: "comparison",
-      provider: "Git",
-      title: "2 commits",
-      base: "0123456789abcdef0123456789abcdef01234567",
-      head: "feature",
-      commits: [
-        { title: "second", revision: "bbbb", displayRevision: "bbb" },
-        { title: "first", revision: "aaaa", displayRevision: "aaa" },
-      ],
+  test("a commit-to-commit timeline ends on its last commit", () => {
+    const timeline = { ...createTestReviewTimeline(["one"]), workingTree: false };
+    expect(rangeStopsFromTimeline(timeline).map((stop) => stop.label)).toEqual([
+      "bbbbbbb",
+      "1111111",
+    ]);
+  });
+
+  test("places the handles on the range on screen", () => {
+    const timeline = createTestReviewTimeline(["one", "two"]);
+    const stops = rangeStopsFromTimeline(timeline);
+    const narrowed = { ...timeline, current: { from: "1".repeat(40), to: "2".repeat(40) } };
+    expect(rangeSelectionFromTimeline(narrowed, stops, "to")).toEqual({
+      from: 1,
+      to: 2,
+      active: "to",
     });
-    expect(stops.map((stop) => stop.label)).toEqual(["0123456", "aaa", "bbb"]);
+    expect(rangeSelectionFromTimeline(timeline, stops)).toEqual({ from: 0, to: 3, active: "from" });
   });
 });
 

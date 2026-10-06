@@ -100,7 +100,7 @@ export function registerRangeSliderMode(
         return;
       }
       if (store.getSnapshot().stops.length < 2) {
-        ctx.notify("Commit range needs HUNK_RANGE_SLIDER=1 and an open files pane", "info");
+        ctx.notify("This review has no commit range in the files pane", "info");
         return;
       }
       ctx.keyboardModes.enterMode(RANGE_SLIDER_MODE_ID);

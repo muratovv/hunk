@@ -107,6 +107,7 @@ import { mergeLineHighlightMaps } from "./highlights/merge";
 import { useLineHighlights } from "./highlights/useLineHighlights";
 import { useLineHighlightsController } from "./highlights/useLineHighlightsController";
 import { useKeyboardModeController } from "./keyboardModes/useKeyboardModeController";
+import { useReviewTimeline } from "./hooks/useReviewTimeline";
 import { createExtensionPaneKeybindings, resolveCommandKeys } from "./lib/keymap";
 import {
   EXTENSION_PANE_DIVIDER_SIZE,
@@ -272,6 +273,11 @@ export function App({
   const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [storedFocusArea, setFocusArea] = useState<StoredFocusArea>("files");
   const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
+  const reviewTimeline = useReviewTimeline({
+    bootstrap,
+    onReloadSession,
+    onError: showSessionNotice,
+  });
   // Keep an incompatible-daemon notice until the broker reconnects; timed notices must not clear it.
   const [daemonNoticeText, setDaemonNoticeText] = useState<string | null>(null);
   const { store: statusLineStore, snapshot: statusLineState } = useStatusLine({
@@ -1474,6 +1480,7 @@ export function App({
         <ExtensionPaneHost
           registered={pane.registered}
           review={bootstrap.review ?? null}
+          timeline={reviewTimeline.timeline}
           files={filteredFiles}
           fileViews={getRenderExtensionFileViews()}
           selectedFileId={selection.file?.id ?? null}
@@ -1510,6 +1517,7 @@ export function App({
             focusFiles();
             return review.revealLine(fileId, side, line);
           }}
+          onRescopeReview={reviewTimeline.rescopeReview}
           onRenderFailure={
             pane.key === HUNK_FILES_PANE_KEY ? undefined : () => reportPaneRenderFailure(pane)
           }
