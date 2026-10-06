@@ -1,14 +1,11 @@
-import {
-  createTextAttributes,
-  EditBuffer,
-  EditorView,
-  type TextareaRenderable,
-} from "@opentui/core";
+import { createTextAttributes, EditBuffer, EditorView } from "@opentui/core";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { DiffFile } from "../../../core/changeset/model";
 import type { LayoutMode } from "../../../core/run/commandInputs";
 import type { AgentAnnotation } from "../../../extension-api/types";
 import { agentNoteBoxLayout } from "../../lib/agentNoteGeometry";
+import type { ComposerTextareaRenderable } from "./composerTextarea";
+import "./composerTextarea";
 import {
   annotationRangeLabel,
   inlineNoteTitle,
@@ -232,7 +229,7 @@ export function AgentInlineNote({
   theme: AppTheme;
   width: number;
 }) {
-  const textareaRef = useRef<TextareaRenderable | null>(null);
+  const textareaRef = useRef<ComposerTextareaRenderable | null>(null);
   const [actionsHovered, setActionsHovered] = useState(false);
   const [hoveredActionId, setHoveredActionId] = useState<string | null>(null);
   const isDraft = Boolean(draft);
@@ -666,7 +663,7 @@ export function AgentInlineNote({
             ))}
           </box>
           <box style={{ width: 1, height: draftTextareaRows, backgroundColor: theme.panel }} />
-          <textarea
+          <composer-textarea
             ref={textareaRef}
             width={draftContentWidth}
             height={draftTextareaRows}

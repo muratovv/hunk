@@ -224,6 +224,44 @@ describe("PTY notes", () => {
     }
   });
 
+  // OpenTUI places a focused editor's caret even when a scroll box clips it, and the terminal
+  // pins it to the screen edge: it used to blink on the header rows on every wheel step.
+  test("the composer's caret hides while the composer is scrolled out of view", async () => {
+    const fixture = harness.createDirectionalGapRepoFixture();
+    const session = await harness.launchHunk({
+      args: ["diff", "--mode", "unified", "--no-sidebar"],
+      cwd: fixture.dir,
+      cols: 100,
+      rows: 16,
+    });
+    const composerRow = (text: string) =>
+      text.split("\n").find((line) => line.includes("hello note")) ?? "";
+
+    try {
+      await session.waitForText(/View\s+Navigate\s+Agent\s+Help/, { timeout: 15_000 });
+      await harness.pressAndWaitForText(session, "c", /Draft note/, { timeout: 5_000 });
+      await session.type("hello note");
+      await session.waitForText(/hello note/, { timeout: 5_000 });
+      await session.waitIdle({ timeout: 300 });
+      // Positive control: in view, the caret is drawn right after the typed text.
+      expect(composerRow(await session.text({ showCursor: true }))).toContain("hello note█");
+
+      await session.scrollDown(12);
+      await harness.waitForSnapshot(session, (text) => !text.includes("Draft note"), 5_000);
+      await session.waitIdle({ timeout: 300 });
+      expect(await session.text({ showCursor: true })).not.toContain("█");
+
+      // Keys still reach the composer while it is off screen, and the caret comes back with it.
+      await session.type("!");
+      await session.scrollUp(12);
+      await session.waitForText(/hello note!/, { timeout: 5_000 });
+      await session.waitIdle({ timeout: 300 });
+      expect(composerRow(await session.text({ showCursor: true }))).toContain("hello note!█");
+    } finally {
+      session.close();
+    }
+  });
+
   test("user notes can be drafted and saved inline in a real PTY", async () => {
     const fixture = harness.createLongWrapFilePair();
     const session = await harness.launchHunk({
