@@ -16,6 +16,7 @@ import type { AppBootstrap } from "../../core/bootstrap";
 import type { CliInput } from "../../core/run/commandInputs";
 import { getVcsAdapter, loadVcsTimeline } from "../../core/vcs";
 import {
+  hasReviewTimelineRange,
   REVIEW_TIMELINE_MAX_COMMITS,
   rescopedReviewInput,
   reviewInputKey,
@@ -91,7 +92,9 @@ export function useReviewTimeline({
     )
       .then((loaded) => {
         if (controller.signal.aborted) return;
-        setTimeline(loaded?.commits.length ? toExtensionReviewTimeline(loaded, origin) : null);
+        setTimeline(
+          hasReviewTimelineRange(loaded, origin) ? toExtensionReviewTimeline(loaded, origin) : null,
+        );
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;

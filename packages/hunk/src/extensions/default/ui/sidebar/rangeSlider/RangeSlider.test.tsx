@@ -12,13 +12,16 @@ import { createRangeSliderStore } from "./store";
 const theme = toExtensionPaintTheme(resolveTheme("github-dark-default", null));
 
 /** Render the slider over a three-commit working-tree timeline with a private store. */
-async function renderTestSlider(result: ExtensionReviewReloadResult = { ok: true }) {
+async function renderTestSlider(
+  result: ExtensionReviewReloadResult = { ok: true },
+  timeline = createTestReviewTimeline(),
+) {
   const store = createRangeSliderStore();
   const rescopes: Array<[string, string | null]> = [];
   const notices: string[] = [];
   const setup = await testRender(
     <RangeSlider
-      timeline={createTestReviewTimeline()}
+      timeline={timeline}
       rescopeReview={async (from, to) => {
         rescopes.push([from, to]);
         return result;
@@ -89,6 +92,25 @@ describe("RangeSlider", () => {
       await settleTestSlider(setup);
       expect(notices).toEqual(["Commit range not applied: git exploded"]);
       expect(store.getSnapshot().selection).toMatchObject({ from: 0, to: 4 });
+    } finally {
+      act(() => setup.renderer.destroy());
+    }
+  });
+
+  test("a branch with only uncommitted work shows base to the working tree", async () => {
+    const { setup, store, rescopes } = await renderTestSlider(
+      { ok: true },
+      createTestReviewTimeline([]),
+    );
+    try {
+      const lines = setup.captureCharFrame().split("\n");
+      expect(lines[0]).toContain("1 step");
+      expect(lines[1]).toMatch(/^ ◆━+◆  $/);
+      await act(async () => {
+        store.updateSelection((selection, count) => moveActiveHandle(selection, 1, count));
+      });
+      await settleTestSlider(setup);
+      expect(rescopes).toEqual([]);
     } finally {
       act(() => setup.renderer.destroy());
     }

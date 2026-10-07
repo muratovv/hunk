@@ -75,6 +75,19 @@ function toTimelineCommit(commit: ExtensionVcsHistoryCommit): ExtensionCompariso
   };
 }
 
+/**
+ * Report whether a loaded line offers at least two positions.
+ *
+ * A branch with only uncommitted work still has base and working tree, so it keeps the slider; a
+ * commit range whose endpoints coincide has a single position and none.
+ */
+export function hasReviewTimelineRange(
+  loaded: ExtensionVcsTimeline | null,
+  origin: ReviewTimelineOrigin,
+): loaded is ExtensionVcsTimeline {
+  return loaded !== null && loaded.commits.length + (origin.workingTree ? 1 : 0) > 0;
+}
+
 /** Build the public timeline, positioned on the origin's full range. */
 export function toExtensionReviewTimeline(
   loaded: ExtensionVcsTimeline,

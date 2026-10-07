@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CliInput } from "../../core/run/commandInputs";
 import {
+  hasReviewTimelineRange,
   rescopedReviewInput,
   reviewInputKey,
   reviewTimelineOrigin,
@@ -104,5 +105,26 @@ describe("public timeline", () => {
       { from: "base", to: "head", workingTree: false },
     );
     expect(timeline.current).toEqual({ from: "b".repeat(40), to: "c".repeat(40) });
+  });
+});
+
+describe("timeline visibility", () => {
+  const loaded = (commits: number) => ({
+    base: commit("b".repeat(40), "base"),
+    commits: Array.from({ length: commits }, (_, index) => commit(String(index).repeat(40), "c")),
+  });
+
+  test("a branch with only uncommitted work still spans base to the working tree", () => {
+    expect(hasReviewTimelineRange(loaded(0), { from: "base", workingTree: true })).toBe(true);
+  });
+
+  test("needs two positions: a commit range with no commits has nothing to show", () => {
+    expect(hasReviewTimelineRange(loaded(0), { from: "a", to: "a", workingTree: false })).toBe(
+      false,
+    );
+    expect(hasReviewTimelineRange(loaded(1), { from: "a", to: "b", workingTree: false })).toBe(
+      true,
+    );
+    expect(hasReviewTimelineRange(null, { from: "base", workingTree: true })).toBe(false);
   });
 });
