@@ -344,7 +344,16 @@ export async function loadGitTimeline(
   );
   const commits = parseGitHistory(line.stdout, new Map(), true);
   if (commits.length > input.maxCount) return null;
-  return { base, commits: commits.reverse() };
+  if (input.to !== undefined) return { base, commits: commits.reverse() };
+  const status = await runGitPlanningQuery(
+    [
+      "status",
+      "--porcelain",
+      input.excludeUntracked ? "--untracked-files=no" : "--untracked-files=normal",
+    ],
+    options,
+  );
+  return { base, commits: commits.reverse(), workingTreeChanged: status.stdout.trim().length > 0 };
 }
 
 /** Count commits in one provider-owned range without loading their messages. */

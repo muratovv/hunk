@@ -331,7 +331,7 @@ describe("Git review timeline", () => {
     return { repo, git, commit };
   }
 
-  const loadTimeline = (repo: string, from: string, to = "HEAD", maxCount = 50) =>
+  const loadTimeline = (repo: string, from: string, to?: string, maxCount = 50) =>
     createGitVcsAdapter().history!.loadTimeline!({ from, to, maxCount }, { cwd: repo });
 
   test("lists the base and its first-parent descendants oldest first", async () => {
@@ -378,8 +378,31 @@ describe("Git review timeline", () => {
       commit("one");
       commit("two");
       expect(await loadTimeline(repo, side)).toBeNull();
-      expect(await loadTimeline(repo, base, "HEAD", 1)).toBeNull();
-      expect((await loadTimeline(repo, base, "HEAD", 2))?.commits).toHaveLength(2);
+      expect(await loadTimeline(repo, base, undefined, 1)).toBeNull();
+      expect((await loadTimeline(repo, base, undefined, 2))?.commits).toHaveLength(2);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("reports whether the working copy differs from its commit", async () => {
+    const { repo, commit } = createTestTimelineRepo();
+    try {
+      const base = commit("base");
+      commit("first");
+      expect((await loadTimeline(repo, base))?.workingTreeChanged).toBe(false);
+      expect((await loadTimeline(repo, base, "HEAD"))?.workingTreeChanged).toBeUndefined();
+
+      writeFileSync(join(repo, "untracked.txt"), "new\n");
+      expect((await loadTimeline(repo, base))?.workingTreeChanged).toBe(true);
+      const ignoringUntracked = await createGitVcsAdapter().history!.loadTimeline!(
+        { from: base, maxCount: 50, excludeUntracked: true },
+        { cwd: repo },
+      );
+      expect(ignoringUntracked?.workingTreeChanged).toBe(false);
+
+      writeFileSync(join(repo, "first.txt"), "edited\n");
+      expect((await loadTimeline(repo, base))?.workingTreeChanged).toBe(true);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

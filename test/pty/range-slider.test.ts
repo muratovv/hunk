@@ -25,17 +25,17 @@ describe("PTY commit-range slider", () => {
     try {
       const initial = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("4 steps") && text.includes("untracked-wip.txt"),
+        (text) => text.includes("3 commits + WIP") && text.includes("untracked-wip.txt"),
         15_000,
       );
       expect(initial).toContain("added-in-c1.txt");
 
-      // `C` enters the range mode; `l` steps `from` past the commit that added the file.
+      // `C` enters the range mode; `l` moves `from` off the commit that added the file.
       session.writeRaw("C");
       session.writeRaw("l");
       const afterFrom = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("3 steps") && !text.includes("added-in-c1.txt"),
+        (text) => text.includes("2 commits + WIP") && !text.includes("added-in-c1.txt"),
         10_000,
       );
       expect(afterFrom).toContain("untracked-wip.txt");
@@ -45,17 +45,32 @@ describe("PTY commit-range slider", () => {
       session.writeRaw("h");
       const afterTo = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("2 steps") && !text.includes("untracked-wip.txt"),
+        (text) => text.includes("2 commits") && !text.includes("untracked-wip.txt"),
         10_000,
       );
       expect(afterTo).toContain("added-in-c3.txt");
+
+      // One more `h` puts both handles on c2: exactly that commit, which only edits shared.txt.
+      session.writeRaw("h");
+      const single = await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("1 commit") && !text.includes("added-in-c3.txt"),
+        10_000,
+      );
+      expect(single).toContain("shared.txt");
+      session.writeRaw("l");
+      await harness.waitForSnapshot(
+        session,
+        (text) => text.includes("2 commits") && text.includes("added-in-c3.txt"),
+        10_000,
+      );
 
       session.writeRaw("\x1b");
       await harness.waitForSnapshot(session, (text) => !text.includes("Edit range"), 5_000);
       session.writeRaw("r");
       const refreshed = await harness.waitForSnapshot(
         session,
-        (text) => text.includes("2 steps") && text.includes("added-in-c3.txt"),
+        (text) => text.includes("2 commits") && text.includes("added-in-c3.txt"),
         10_000,
       );
       expect(refreshed).not.toContain("untracked-wip.txt");
@@ -101,7 +116,7 @@ describe("PTY commit-range slider", () => {
     try {
       await harness.waitForSnapshot(
         session,
-        (text) => text.includes("4 steps") && text.includes("NOTE-WIP"),
+        (text) => text.includes("3 commits + WIP") && text.includes("NOTE-WIP"),
         15_000,
       );
 
@@ -111,7 +126,8 @@ describe("PTY commit-range slider", () => {
       session.writeRaw("h");
       await harness.waitForSnapshot(
         session,
-        (text) => text.includes("3 steps") && !text.includes("NOTE-WIP"),
+        (text) =>
+          text.includes("3 commits") && !text.includes("+ WIP") && !text.includes("NOTE-WIP"),
         10_000,
       );
       session.writeRaw("\x1b");
@@ -130,7 +146,9 @@ describe("PTY commit-range slider", () => {
       await harness.waitForSnapshot(
         session,
         (text) =>
-          text.includes("4 steps") && text.includes("NOTE-WIP") && !text.includes("NOTE-C3"),
+          text.includes("3 commits + WIP") &&
+          text.includes("NOTE-WIP") &&
+          !text.includes("NOTE-C3"),
         10_000,
       );
 

@@ -332,13 +332,16 @@ function normalizeTimeline(value: unknown, maxCount: number): ExtensionVcsTimeli
   if (value === null) return null;
   if (!isPlainObject(value))
     throw new Error("VCS history loadTimeline() must return an object or null.");
-  const fields = snapshotProperties(value, ["base", "commits"]);
+  const fields = snapshotProperties(value, ["base", "commits", "workingTreeChanged"]);
   if (!Array.isArray(fields.commits) || fields.commits.length > maxCount) {
     throw new Error("VCS history loadTimeline() must return at most maxCount commits.");
   }
   return {
     base: normalizeHistoryCommit(fields.base),
     commits: fields.commits.map((commit) => normalizeHistoryCommit(commit)),
+    ...(typeof fields.workingTreeChanged === "boolean"
+      ? { workingTreeChanged: fields.workingTreeChanged }
+      : {}),
   };
 }
 

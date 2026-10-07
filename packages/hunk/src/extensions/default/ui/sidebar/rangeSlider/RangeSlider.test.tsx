@@ -5,7 +5,7 @@ import { createTestReviewTimeline } from "../../../../../../../../test/helpers/r
 import type { ExtensionReviewReloadResult } from "../../../../../extension-api/types";
 import { toExtensionPaintTheme } from "../../../../../ui/lib/extensionPaintTheme";
 import { resolveTheme } from "../../../../../ui/themes";
-import { moveActiveHandle } from "./model";
+import { moveActiveHandle, placeHandle } from "./model";
 import { RANGE_SLIDER_HEIGHT, RangeSlider } from "./RangeSlider";
 import { createRangeSliderStore } from "./store";
 
@@ -15,6 +15,7 @@ const theme = toExtensionPaintTheme(resolveTheme("github-dark-default", null));
 async function renderTestSlider(
   result: ExtensionReviewReloadResult = { ok: true },
   timeline = createTestReviewTimeline(),
+  width = 30,
 ) {
   const store = createRangeSliderStore();
   const rescopes: Array<[string, string | null]> = [];
@@ -28,11 +29,11 @@ async function renderTestSlider(
       }}
       notify={(message) => notices.push(message)}
       theme={theme}
-      width={30}
+      width={width}
       store={store}
       debounceMs={5}
     />,
-    { width: 30, height: RANGE_SLIDER_HEIGHT },
+    { width, height: RANGE_SLIDER_HEIGHT },
   );
   await act(async () => {
     await setup.renderOnce();
@@ -53,10 +54,10 @@ describe("RangeSlider", () => {
     const { setup, rescopes } = await renderTestSlider();
     try {
       const lines = setup.captureCharFrame().split("\n");
-      expect(lines[0]).toContain("4 steps");
-      expect(lines[1]).toMatch(/^ ◆━+●━+●━+●━+◆  $/);
-      expect(lines[2]).toContain("▸from bbbbbbb base · fork");
-      expect(lines[3]).toContain(" to   WIP working tree");
+      expect(lines[0]).toContain("3 commits + WIP");
+      expect(lines[1]).toMatch(/^ ◆━+●━+●━+◆  $/);
+      expect(lines[2]).toContain("▸from 1111111 first");
+      expect(lines[3]).toContain(" to   WIP uncommitted changes");
       await settleTestSlider(setup);
       expect(rescopes).toEqual([]);
     } finally {
@@ -73,7 +74,7 @@ describe("RangeSlider", () => {
       });
       await settleTestSlider(setup);
       expect(rescopes).toEqual([["2".repeat(40), null]]);
-      expect(setup.captureCharFrame().split("\n")[2]).toContain("2222222 second");
+      expect(setup.captureCharFrame().split("\n")[2]).toContain("3333333 third");
     } finally {
       act(() => setup.renderer.destroy());
     }
@@ -91,26 +92,46 @@ describe("RangeSlider", () => {
       });
       await settleTestSlider(setup);
       expect(notices).toEqual(["Commit range not applied: git exploded"]);
-      expect(store.getSnapshot().selection).toMatchObject({ from: 0, to: 4 });
+      expect(store.getSnapshot().selection).toMatchObject({ from: 0, to: 3 });
     } finally {
       act(() => setup.renderer.destroy());
     }
   });
 
-  test("a branch with only uncommitted work shows base to the working tree", async () => {
-    const { setup, store, rescopes } = await renderTestSlider(
-      { ok: true },
-      createTestReviewTimeline([]),
-    );
+  test("a branch with only uncommitted work is a single WIP stop", async () => {
+    const { setup, rescopes } = await renderTestSlider({ ok: true }, createTestReviewTimeline([]));
     try {
       const lines = setup.captureCharFrame().split("\n");
-      expect(lines[0]).toContain("1 step");
-      expect(lines[1]).toMatch(/^ ◆━+◆  $/);
-      await act(async () => {
-        store.updateSelection((selection, count) => moveActiveHandle(selection, 1, count));
-      });
+      expect(lines[0]).toContain("WIP");
+      expect(lines[1]).toMatch(/^ ◆ +$/);
       await settleTestSlider(setup);
       expect(rescopes).toEqual([]);
+    } finally {
+      act(() => setup.renderer.destroy());
+    }
+  });
+
+  test("drops the title rather than truncating it when the count needs the room", async () => {
+    const { setup } = await renderTestSlider({ ok: true }, createTestReviewTimeline(), 22);
+    try {
+      const header = setup.captureCharFrame().split("\n")[0] ?? "";
+      expect(header).toContain("3 commits + WIP");
+      expect(header).not.toMatch(/Ran\./);
+    } finally {
+      act(() => setup.renderer.destroy());
+    }
+  });
+
+  test("both handles on one commit re-scope to exactly that commit", async () => {
+    const { setup, store, rescopes } = await renderTestSlider();
+    try {
+      await act(async () => {
+        store.updateSelection((selection, count) => placeHandle(selection, "to", 1, count));
+        store.updateSelection((selection, count) => placeHandle(selection, "from", 1, count));
+      });
+      await settleTestSlider(setup);
+      expect(rescopes).toEqual([["1".repeat(40), "2".repeat(40)]]);
+      expect(setup.captureCharFrame().split("\n")[0]).toContain("1 commit");
     } finally {
       act(() => setup.renderer.destroy());
     }

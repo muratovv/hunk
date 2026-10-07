@@ -99,7 +99,7 @@ export function registerRangeSliderMode(
         ctx.keyboardModes.exitMode();
         return;
       }
-      if (store.getSnapshot().stops.length < 2) {
+      if (store.getSnapshot().stops.length === 0) {
         ctx.notify("This review has no commit range in the files pane", "info");
         return;
       }

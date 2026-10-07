@@ -596,11 +596,14 @@ provider-specific empty/root baseline—of `oldestCommit` directly with `newestC
 merge-base/triple-dot semantics. Hunk treats revision ids as opaque strings and never invents provider
 revision syntax.
 
-Optional `loadTimeline({ from, to?, maxCount }, context)` feeds the files pane's commit-range slider.
-Return `{ base, commits }`: `base` is the commit `from` names and `commits` its descendants up to `to`
-(the working copy's commit when omitted), oldest first, as one linear line — Git follows first
-parents and folds a merge of the base branch into one step. Resolve `null` when `from` is not an
-ancestor of `to` or the line holds more than `maxCount` commits. Without it the slider stays hidden.
+Optional `loadTimeline({ from, to?, maxCount, excludeUntracked? }, context)` feeds the files pane's
+commit-range slider. Return `{ base, commits, workingTreeChanged? }`: `base` is the commit `from`
+names and `commits` its descendants up to `to` (the working copy's commit when omitted), oldest
+first, as one linear line — Git follows first parents and folds a merge of the base branch into one
+step. When `to` is omitted, also report whether the working copy differs from its commit, ignoring
+untracked files if asked. Resolve `null` when `from` is not an ancestor of `to` or the line holds
+more than `maxCount` commits. Without it the slider stays hidden. Hunk reads the line again on
+refresh and watch.
 
 Commits must carry an immutable full `revisionId`, display id, ordered parent ids, subject, optional
 message body, author (and optional email), ISO authored time, and structured ref decorations. The
@@ -975,7 +978,7 @@ The component receives fresh props as the app changes:
 | Prop                | What it is                                                                                                                                                                |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `review`            | immutable review-source metadata (`change-request`, `commit`, or `comparison`), or `null` for ordinary reviews                                                            |
-| `timeline`          | commit line the review can be re-scoped along (`base`, `commits` oldest first, `workingTree`, `current` range), or `null`                                                 |
+| `timeline`          | commit line the review can be re-scoped along (`base`, `commits`, `workingTree`, `workingTreeChanged`, `current`), or `null`                                              |
 | `files`             | the visible reviewed files, review-stream order, filtered, frozen views (each carries `changeType`, `statsTruncated`, and `hunks` summaries beside the usual file fields) |
 | `selectedFileId`    | the selected file, or `null`                                                                                                                                              |
 | `selectedHunkIndex` | the selected hunk within that file, or `null`                                                                                                                             |
@@ -1010,7 +1013,9 @@ with every other reload, and leaves `timeline` itself in place: the line belongs
 so only `timeline.current` moves. Refresh and watch keep the re-scoped range. The built-in files pane
 uses this for its commit-range slider (`C` edits it). Reviewer notes written on content the range no
 longer shows are hidden, not moved, and a note written on a commit's content records that commit as
-`revision` in the `--store-notes` sidecar.
+`revision` in the `--store-notes` sidecar. The slider itself is inclusive: its positions are the
+commits plus the uncommitted work when `timeline.workingTreeChanged`, and a selection from commit A
+to commit B re-scopes to `parent(A)..B`, so both handles on one commit show exactly that commit.
 
 The three hunk surfaces line up by design: each file's `hunks` lists public
 `ExtensionDiffHunk` summaries (`index`, the `@@` header, inclusive old/new

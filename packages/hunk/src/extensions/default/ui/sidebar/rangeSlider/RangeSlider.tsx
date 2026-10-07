@@ -14,6 +14,8 @@ import {
   rangeTrackCells,
   stopIndexAtColumn,
   type RangeHandle,
+  type RangeSelection,
+  type RangeStop,
   type RangeTrackRole,
 } from "./model";
 import { rangeSliderStore, sameStops, type RangeSliderStore } from "./store";
@@ -40,6 +42,7 @@ export interface RangeSliderProps {
 /** Map a track role to its paint color. */
 function trackColor(role: RangeTrackRole, theme: ExtensionPaneTheme, editing: boolean) {
   switch (role) {
+    case "blank":
     case "rail":
     case "stop":
       return theme.muted;
@@ -51,6 +54,15 @@ function trackColor(role: RangeTrackRole, theme: ExtensionPaneTheme, editing: bo
     case "handle-active":
       return editing ? theme.accent : theme.text;
   }
+}
+
+/** Summarize what the selection covers, e.g. `2 commits + WIP`. */
+function rangeSelectionLabel(stops: readonly RangeStop[], selection: RangeSelection) {
+  const covered = stops.slice(selection.from, selection.to + 1);
+  const commits = covered.filter((stop) => stop.id !== "working-tree").length;
+  const commitText = commits > 0 ? `${commits} commit${commits === 1 ? "" : "s"}` : "";
+  const wip = covered.length > commits ? "WIP" : "";
+  return [commitText, wip].filter(Boolean).join(" + ");
 }
 
 /** Merge adjacent cells of one role so the track paints as a few text runs. */
@@ -87,7 +99,7 @@ export function RangeSlider({
   const stops = useMemo(
     () => rangeStopsFromTimeline(timeline),
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- the line, not `current`, defines stops
-    [timeline.base, timeline.commits, timeline.workingTree],
+    [timeline.base, timeline.commits, timeline.workingTree, timeline.workingTreeChanged],
   );
   const timelineRef = useRef(timeline);
   timelineRef.current = timeline;
@@ -99,8 +111,8 @@ export function RangeSlider({
 
   const adopted = sameStops(state.stops, stops);
   const target = adopted ? state.selection : undefined;
-  const targetFrom = target ? stops[target.from]?.revision : undefined;
-  const targetTo = target ? stops[target.to]?.revision : undefined;
+  const targetFrom = target ? stops[target.from]?.oldRevision : undefined;
+  const targetTo = target ? stops[target.to]?.newRevision : undefined;
   useEffect(() => {
     if (targetFrom === undefined || targetFrom === null || targetTo === undefined) return;
     const { current } = timelineRef.current;
@@ -151,9 +163,8 @@ export function RangeSlider({
       current.active === handle ? current : { ...current, active: handle },
     );
 
-  const span = selection.to - selection.from;
   const title = state.editing ? "Edit range" : "Range";
-  const count = `${span} step${span === 1 ? "" : "s"}`;
+  const count = rangeSelectionLabel(stops, selection);
   const headerWidth = Math.max(1, width - 2 - count.length - 1);
 
   /** Render one handle's label row with its active marker. */
@@ -201,7 +212,7 @@ export function RangeSlider({
         }}
       >
         <text fg={state.editing ? theme.accent : theme.muted} bg={theme.panelAlt}>
-          {padText(title, headerWidth)}
+          {padText(title.length <= headerWidth ? title : "", headerWidth)}
         </text>
         <text fg={theme.muted} bg={theme.panelAlt}>
           {` ${count}`}

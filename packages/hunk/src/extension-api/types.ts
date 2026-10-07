@@ -888,6 +888,8 @@ export interface ExtensionVcsTimelineInput {
   to?: string;
   /** Most commits allowed after `from`; a longer line resolves null. */
   maxCount: number;
+  /** Ignore untracked files when reporting `workingTreeChanged`, as `--exclude-untracked` does. */
+  excludeUntracked?: boolean;
 }
 
 /** One linear commit line a review can be re-scoped along. */
@@ -895,6 +897,8 @@ export interface ExtensionVcsTimeline {
   base: ExtensionVcsHistoryCommit;
   /** Descendants of `base` up to and including the end revision, oldest first. */
   commits: ExtensionVcsHistoryCommit[];
+  /** Set only when `to` was omitted: whether the working copy differs from its commit. */
+  workingTreeChanged?: boolean;
 }
 
 /** Optional read-only history capability implemented independently of review operations. */
@@ -1596,6 +1600,8 @@ export interface ExtensionReviewTimeline {
   readonly base: ExtensionComparisonCommitDescriptor;
   readonly commits: readonly ExtensionComparisonCommitDescriptor[];
   readonly workingTree: boolean;
+  /** Whether the working tree differs from the last commit; read again on refresh and watch. */
+  readonly workingTreeChanged: boolean;
   /** Revisions bounding the diff on screen; `to: null` is the working tree. */
   readonly current: { readonly from: string; readonly to: string | null };
 }

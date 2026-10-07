@@ -109,22 +109,30 @@ describe("public timeline", () => {
 });
 
 describe("timeline visibility", () => {
-  const loaded = (commits: number) => ({
+  const loaded = (commits: number, workingTreeChanged?: boolean) => ({
     base: commit("b".repeat(40), "base"),
     commits: Array.from({ length: commits }, (_, index) => commit(String(index).repeat(40), "c")),
+    ...(workingTreeChanged === undefined ? {} : { workingTreeChanged }),
+  });
+  const worktree = { from: "base", workingTree: true };
+
+  test("a branch with only uncommitted work has its WIP to show", () => {
+    expect(hasReviewTimelineRange(loaded(0, true), worktree)).toBe(true);
+    expect(toExtensionReviewTimeline(loaded(0, true), worktree).workingTreeChanged).toBe(true);
   });
 
-  test("a branch with only uncommitted work still spans base to the working tree", () => {
-    expect(hasReviewTimelineRange(loaded(0), { from: "base", workingTree: true })).toBe(true);
-  });
-
-  test("needs two positions: a commit range with no commits has nothing to show", () => {
+  test("no commits and a clean tree, or an empty commit range, has nothing", () => {
+    expect(hasReviewTimelineRange(loaded(0, false), worktree)).toBe(false);
     expect(hasReviewTimelineRange(loaded(0), { from: "a", to: "a", workingTree: false })).toBe(
       false,
     );
+    expect(hasReviewTimelineRange(null, worktree)).toBe(false);
+  });
+
+  test("one commit is enough, clean tree or not", () => {
+    expect(hasReviewTimelineRange(loaded(1, false), worktree)).toBe(true);
     expect(hasReviewTimelineRange(loaded(1), { from: "a", to: "b", workingTree: false })).toBe(
       true,
     );
-    expect(hasReviewTimelineRange(null, { from: "base", workingTree: true })).toBe(false);
   });
 });
