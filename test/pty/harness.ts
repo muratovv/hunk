@@ -796,6 +796,30 @@ end
     ]);
   }
 
+  /**
+   * Build a branch the range slider can walk: base, `c1` adds `added-in-c1.txt`, `c2` edits
+   * `shared.txt`, `c3` adds `added-in-c3.txt`, then an uncommitted edit and an untracked file.
+   */
+  function createCommitTimelineRepoFixture() {
+    const dir = makeTempDir("hunk-tuistory-timeline-");
+    runGit(["init", "--initial-branch=main"], dir);
+    runGit(["config", "user.name", "Pi"], dir);
+    runGit(["config", "user.email", "pi@example.com"], dir);
+    const commit = (message: string, files: Record<string, string>) => {
+      for (const [path, content] of Object.entries(files)) writeText(join(dir, path), content);
+      runGit(["add", "."], dir);
+      runGit(["commit", "-m", message], dir);
+    };
+    commit("base", { "shared.txt": "one\n" });
+    const base = runGit(["rev-parse", "HEAD"], dir).trim();
+    commit("c1 add file", { "added-in-c1.txt": "c1\n" });
+    commit("c2 edit shared", { "shared.txt": "one\ntwo\n" });
+    commit("c3 add file", { "added-in-c3.txt": "c3\n" });
+    writeText(join(dir, "added-in-c3.txt"), "c3\nwip\n");
+    writeText(join(dir, "untracked-wip.txt"), "wip\n");
+    return { dir, base };
+  }
+
   /** Build nested changed files whose sidebar labels distinguish flat and tree projections. */
   function createNestedSidebarRepoFixture() {
     return createGitRepoFixture([
@@ -1366,6 +1390,7 @@ end
     createSidebarJumpRepoFixture,
     createTabbedFilePair,
     createTwoFileRepoFixture,
+    createCommitTimelineRepoFixture,
     createUnicodePathRepoFixture,
     createWatchFilePair,
     createWideCharacterFilePair,

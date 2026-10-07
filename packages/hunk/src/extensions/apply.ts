@@ -256,7 +256,7 @@ export interface ResolvedExtensionKeyboardModes {
 
 /** Resolve session keyboard-mode identities with first registration winning. */
 export function resolveExtensionKeyboardModes(
-  registry: ExtensionRegistry,
+  registry: Pick<ExtensionRegistry, "keyboardModes">,
 ): ResolvedExtensionKeyboardModes {
   const modes: RegisteredKeyboardMode[] = [];
   const issues: ExtensionApplyIssue[] = [];

@@ -63,7 +63,7 @@ import {
   reviewNoteOwnerHunkIndex,
   type ReviewRevealRequest,
 } from "../../core/review/state";
-import type { ReviewNoteTargetV1 } from "../../core/review/types";
+import type { ReviewNoteTargetV1, ReviewNoteV1 } from "../../core/review/types";
 import { createReviewStore, type ReviewStore } from "../../core/review/store";
 import {
   seedUserNotesFromSidecar,
@@ -119,6 +119,11 @@ import {
   type ReviewVerticalStop,
 } from "../lib/reviewVerticalStops";
 import { agentNoteMarkupWidth } from "../lib/agentNoteGeometry";
+import {
+  userNoteResolutionsForView,
+  viewRevisionOfSide,
+  type ReviewView,
+} from "../lib/userNoteView";
 import { reviewNoteSource } from "../lib/agentAnnotations";
 import { STML_REFERENCE_WIDTH, validateStmlMarkup } from "../lib/stml/layout";
 import {
@@ -339,6 +344,7 @@ export function useTerminalReview({
   sourceLabel = "",
   stmlEnabled = false,
   userNotesSidecarPath,
+  reviewView = null,
 }: {
   files: DiffFile[];
   /** Note-layer visibility the launch configuration resolved for this review. */
@@ -364,6 +370,11 @@ export function useTerminalReview({
   /** `--store-notes` sidecar: seed reviewer notes from it and write every change back. */
   userNotesSidecarPath?: string;
   /**
+   * Revisions the re-scoped review shows, or null without a commit timeline. Notes written on
+   * other content are hidden while this view is on screen and keep their commit in the sidecar.
+   */
+  reviewView?: ReviewView | null;
+  /**
    * Mutable ref the app keeps pointed at the current layout and pane width.
    * A ref (not a value) because App computes geometry after this hook runs;
    * daemon commands arrive asynchronously, so reads always see fresh state.
@@ -374,11 +385,13 @@ export function useTerminalReview({
     () => projectReviewDocument(files, { sourceLabel }),
     [files, sourceLabel],
   );
-  const [{ store, notesSidecar }] = useState(() => {
+  const [{ store, notesSidecar, noteBasis }] = useState(() => {
     const seeded = userNotesSidecarPath
       ? seedUserNotesFromSidecar(document, readUserNotesSidecar(userNotesSidecarPath))
       : undefined;
     return {
+      // Revision each user note's side showed when written; null is the working tree.
+      noteBasis: new Map<string, string | null>(seeded?.revisions ?? []),
       store: createReviewStore(document, {
         showAgentNotes: initialShowAgentNotes,
         userNotes: seeded?.notes,
@@ -393,6 +406,20 @@ export function useTerminalReview({
           : null,
     };
   });
+  const reviewViewRef = useRef(reviewView);
+  reviewViewRef.current = reviewView;
+  /** Return a note's basis, stamping it from the view on screen the first time it is asked. */
+  const noteBasisOf = useCallback(
+    (note: ReviewNoteV1): string | null | undefined => {
+      if (noteBasis.has(note.id)) return noteBasis.get(note.id);
+      const view = reviewViewRef.current;
+      if (!view) return undefined;
+      const basis = viewRevisionOfSide(view, reviewNoteAnchorLine(note).side);
+      noteBasis.set(note.id, basis);
+      return basis;
+    },
+    [noteBasis],
+  );
   // Mirror reviewer notes to the sidecar on every change; startup never rewrites it.
   useEffect(() => {
     if (!notesSidecar) {
@@ -418,10 +445,11 @@ export function useTerminalReview({
           [...notesSidecar.knownFiles.values()],
           userNotes,
           notesSidecar.unmatched,
+          (note) => noteBasisOf(note) ?? undefined,
         ),
       );
     });
-  }, [notesSidecar, store]);
+  }, [noteBasisOf, notesSidecar, store]);
   const sourceLoadRequestsRef = useRef(new Map<string, SourceLoadRequest>());
   const nextSourceLoadRequestIdRef = useRef(1);
   const lineCursorBeforeExpandRef = useRef(new Map<string, LineCursor>());
@@ -473,6 +501,19 @@ export function useTerminalReview({
   }, [commitAgentLineHighlights, document, store]);
 
   const state = useReviewStoreSnapshot(store);
+  // Re-decide which user notes are on screen after any note, document, or range change.
+  useEffect(() => {
+    if (!reviewView) return;
+    store.dispatch({
+      type: "notes/set-user-resolutions",
+      resolutions: userNoteResolutionsForView(
+        state.userNotes,
+        noteBasisOf,
+        reviewView,
+        state.document,
+      ),
+    });
+  }, [noteBasisOf, reviewView, state.document, state.userNotes, store]);
   const filter = state.filter;
   const scrollToNote = state.reveal.scrollToNote;
   const [lineCursor, setLineCursor] = useState<LineCursor | null>(null);

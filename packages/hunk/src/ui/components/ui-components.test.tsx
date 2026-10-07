@@ -556,6 +556,7 @@ describe("UI components", () => {
           selectHunk: () => {},
           revealLine: () => {},
           notify: () => {},
+          rescopeReview: async () => ({ ok: true }),
         }}
       />,
       36,
@@ -591,6 +592,7 @@ describe("UI components", () => {
         selectHunk: () => {},
         revealLine: () => {},
         notify: () => {},
+        rescopeReview: async () => ({ ok: true }) as const,
       },
       files,
       keybindings: { matches: () => false, getKeys: () => [] },

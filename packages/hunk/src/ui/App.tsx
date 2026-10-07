@@ -30,11 +30,7 @@ import {
 } from "../core/review/selectors";
 import type { CliInput, CursorLine, LayoutMode } from "../core/run/commandInputs";
 import { sanitizeTerminalLine } from "../lib/terminalText";
-import {
-  resolveExtensionFileViews,
-  resolveExtensionKeyboardModes,
-  resolveExtensionSessionOptions,
-} from "../extensions/apply";
+import { resolveExtensionFileViews, resolveExtensionSessionOptions } from "../extensions/apply";
 import { projectExtensionReviewNotes } from "../extensions/reviewSnapshot";
 import type { ExtensionNotifyType, ExtensionLoadResult } from "../extensions/types";
 import type { ReviewProducer } from "../app/review/producer";
@@ -98,6 +94,7 @@ import { buildExtensionAppCommands, extensionCommandKeyDefaults } from "./lib/ex
 import { createExtensionReviewReloadControls } from "./lib/extensionReviewReload";
 import {
   buildSessionCommands,
+  buildSessionKeyboardModes,
   buildSessionLineHighlighters,
   isBundledExtensionId,
 } from "./lib/sessionRegistrations";
@@ -110,6 +107,7 @@ import { mergeLineHighlightMaps } from "./highlights/merge";
 import { useLineHighlights } from "./highlights/useLineHighlights";
 import { useLineHighlightsController } from "./highlights/useLineHighlightsController";
 import { useKeyboardModeController } from "./keyboardModes/useKeyboardModeController";
+import { useReviewTimeline } from "./hooks/useReviewTimeline";
 import { createExtensionPaneKeybindings, resolveCommandKeys } from "./lib/keymap";
 import {
   EXTENSION_PANE_DIVIDER_SIZE,
@@ -225,6 +223,12 @@ export function App({
   const noteGeometryRef = useRef<AgentNoteGeometrySnapshot | null>(null);
   const [lineCursors, setLineCursors] = useState<LineCursor[]>([]);
   const [reviewVerticalStops, setReviewVerticalStops] = useState<ReviewVerticalStop[]>([]);
+  const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
+  const reviewTimeline = useReviewTimeline({
+    bootstrap,
+    onReloadSession,
+    onError: showSessionNotice,
+  });
   const review = useTerminalReview({
     files: reviewFiles,
     initialShowAgentNotes: bootstrap.initialShowAgentNotes ?? false,
@@ -234,6 +238,7 @@ export function App({
     sourceLabel: bootstrap.changeset.sourceLabel,
     stmlEnabled,
     userNotesSidecarPath: bootstrap.userNotesSidecarPath,
+    reviewView: reviewTimeline.timeline?.current ?? null,
   });
   // The producer plans brokered actions against the store this controller owns, so a
   // remote action and a key press reach the same state through the same intent path.
@@ -274,7 +279,6 @@ export function App({
   const [showHelp, setShowHelp] = useState(false);
   const [showAgentSkill, setShowAgentSkill] = useState(false);
   const [storedFocusArea, setFocusArea] = useState<StoredFocusArea>("files");
-  const { text: sessionNoticeText, show: showSessionNotice } = useTimedNotice(4_000);
   // Keep an incompatible-daemon notice until the broker reconnects; timed notices must not clear it.
   const [daemonNoticeText, setDaemonNoticeText] = useState<string | null>(null);
   const { store: statusLineStore, snapshot: statusLineState } = useStatusLine({
@@ -376,7 +380,7 @@ export function App({
     [extensions],
   );
   const sessionKeyboardModes = useMemo(
-    () => (extensions ? resolveExtensionKeyboardModes(extensions.registry).modes : []),
+    () => buildSessionKeyboardModes(extensions?.registry),
     [extensions],
   );
   // Bundled highlighters and commands compose ahead of the user registry's, so
@@ -1477,6 +1481,7 @@ export function App({
         <ExtensionPaneHost
           registered={pane.registered}
           review={bootstrap.review ?? null}
+          timeline={reviewTimeline.timeline}
           files={filteredFiles}
           fileViews={getRenderExtensionFileViews()}
           selectedFileId={selection.file?.id ?? null}
@@ -1513,6 +1518,7 @@ export function App({
             focusFiles();
             return review.revealLine(fileId, side, line);
           }}
+          onRescopeReview={reviewTimeline.rescopeReview}
           onRenderFailure={
             pane.key === HUNK_FILES_PANE_KEY ? undefined : () => reportPaneRenderFailure(pane)
           }

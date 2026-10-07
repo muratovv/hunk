@@ -304,3 +304,107 @@ describe("Git history production", () => {
     ).toThrow("invalid history object id");
   });
 });
+
+describe("Git review timeline", () => {
+  /** Build a throwaway repository and a git runner bound to it. */
+  function createTestTimelineRepo() {
+    const repo = mkdtempSync(join(tmpdir(), "hunk-git-timeline-"));
+    const git = (...args: string[]) => {
+      const result = Bun.spawnSync(["git", ...args], {
+        cwd: repo,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+      return result.stdout.toString().trim();
+    };
+    const commit = (name: string) => {
+      writeFileSync(join(repo, `${name}.txt`), `${name}\n`);
+      git("add", `${name}.txt`);
+      git("commit", "--quiet", "-m", name);
+      return git("rev-parse", "HEAD");
+    };
+    git("init", "--quiet", "--initial-branch=main");
+    git("config", "user.name", "Test");
+    git("config", "user.email", "test@example.com");
+    return { repo, git, commit };
+  }
+
+  const loadTimeline = (repo: string, from: string, to?: string, maxCount = 50) =>
+    createGitVcsAdapter().history!.loadTimeline!({ from, to, maxCount }, { cwd: repo });
+
+  test("lists the base and its first-parent descendants oldest first", async () => {
+    const { repo, commit } = createTestTimelineRepo();
+    try {
+      const base = commit("base");
+      const first = commit("first");
+      const second = commit("second");
+      const timeline = await loadTimeline(repo, base);
+      expect(timeline?.base).toMatchObject({ revisionId: base, subject: "base" });
+      expect(timeline?.commits.map((entry) => entry.revisionId)).toEqual([first, second]);
+      expect((await loadTimeline(repo, second))?.commits).toEqual([]);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("folds a merge from the base branch into one step after the new merge-base", async () => {
+    const { repo, git, commit } = createTestTimelineRepo();
+    try {
+      commit("root");
+      git("switch", "--quiet", "-c", "feature");
+      commit("before-merge");
+      git("switch", "--quiet", "main");
+      const mainTip = commit("main-tip");
+      git("switch", "--quiet", "feature");
+      git("merge", "--quiet", "--no-edit", "main");
+      const merge = git("rev-parse", "HEAD");
+      const after = commit("after-merge");
+      const timeline = await loadTimeline(repo, mainTip);
+      expect(timeline?.commits.map((entry) => entry.revisionId)).toEqual([merge, after]);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("resolves null for an unrelated base or a line longer than the bound", async () => {
+    const { repo, git, commit } = createTestTimelineRepo();
+    try {
+      const base = commit("base");
+      git("switch", "--quiet", "-c", "side");
+      const side = commit("side");
+      git("switch", "--quiet", "main");
+      commit("one");
+      commit("two");
+      expect(await loadTimeline(repo, side)).toBeNull();
+      expect(await loadTimeline(repo, base, undefined, 1)).toBeNull();
+      expect((await loadTimeline(repo, base, undefined, 2))?.commits).toHaveLength(2);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("reports whether the working copy differs from its commit", async () => {
+    const { repo, commit } = createTestTimelineRepo();
+    try {
+      const base = commit("base");
+      commit("first");
+      expect((await loadTimeline(repo, base))?.workingTreeChanged).toBe(false);
+      expect((await loadTimeline(repo, base, "HEAD"))?.workingTreeChanged).toBeUndefined();
+
+      writeFileSync(join(repo, "untracked.txt"), "new\n");
+      expect((await loadTimeline(repo, base))?.workingTreeChanged).toBe(true);
+      const ignoringUntracked = await createGitVcsAdapter().history!.loadTimeline!(
+        { from: base, maxCount: 50, excludeUntracked: true },
+        { cwd: repo },
+      );
+      expect(ignoringUntracked?.workingTreeChanged).toBe(false);
+
+      writeFileSync(join(repo, "first.txt"), "edited\n");
+      expect((await loadTimeline(repo, base))?.workingTreeChanged).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});

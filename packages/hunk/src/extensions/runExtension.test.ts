@@ -1036,6 +1036,38 @@ describe("toInternalVcsAdapter history boundary", () => {
     ).rejects.toThrow("must return a revision-range action");
   });
 
+  test("sanitizes a provider timeline and refuses one past the requested bound", async () => {
+    const commit = (revisionId: string, subject: string) => ({
+      revisionId,
+      displayId: revisionId.slice(0, 8),
+      parentRevisionIds: [] as string[],
+      subject,
+      authorName: "Ada",
+      authoredAt: "2026-01-01T00:00:00Z",
+      decorations: [],
+    });
+    const timelineAdapter = (commits: ReturnType<typeof commit>[]) =>
+      toInternalVcsAdapter({
+        id: "timeline",
+        name: "Timeline",
+        detect: () => null,
+        history: {
+          open: () => ({ read: async () => ({ commits: [], done: true }), close() {} }),
+          planReview: (entry) => ({ kind: "revision-show", revisionId: entry.revisionId }),
+          loadTimeline: async () => ({ base: commit("b".repeat(40), "base"), commits }),
+        },
+      });
+    const input = { from: "base", to: "HEAD", maxCount: 1 };
+
+    const timeline = await timelineAdapter([commit("c".repeat(40), "spoof\x1b]52;c;cHdu\x07")])
+      .history!.loadTimeline!(input, { cwd: "/repo" });
+    expect(timeline?.commits[0]?.subject).not.toContain("\x1b");
+    await expect(
+      timelineAdapter([commit("c".repeat(40), "one"), commit("d".repeat(40), "two")]).history!
+        .loadTimeline!(input, { cwd: "/repo" }),
+    ).rejects.toThrow("at most maxCount commits");
+  });
+
   test("copies and sanitizes bounded history pages", async () => {
     const commit = {
       revisionId: "a".repeat(40),

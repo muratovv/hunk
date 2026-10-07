@@ -9,12 +9,17 @@
  * stays active under `--no-extensions`, where the user load result is simply empty. Panes have
  * the same composition in `extensionPanes.ts`.
  */
-import { resolveExtensionCommands, resolveExtensionLineHighlighters } from "../../extensions/apply";
+import {
+  resolveExtensionCommands,
+  resolveExtensionKeyboardModes,
+  resolveExtensionLineHighlighters,
+} from "../../extensions/apply";
 import { getBundledUIRegistry } from "../../extensions/default/ui";
 import { HUNK_VENDOR_EXTENSION_ID } from "../../extensions/extensionIds";
 import type {
   ExtensionRegistry,
   RegisteredCommand,
+  RegisteredKeyboardMode,
   RegisteredLineHighlighter,
 } from "../../extensions/types";
 
@@ -36,6 +41,16 @@ export function buildSessionLineHighlighters(
   return resolveExtensionLineHighlighters({
     lineHighlighters: [...bundled.lineHighlighters, ...(userRegistry?.lineHighlighters ?? [])],
   }).highlighters;
+}
+
+/** Compose bundled keyboard modes before user modes, so a bundled command can enter its own mode. */
+export function buildSessionKeyboardModes(
+  userRegistry: Pick<ExtensionRegistry, "keyboardModes"> | undefined,
+  bundled: Pick<ExtensionRegistry, "keyboardModes"> = getBundledUIRegistry(),
+): RegisteredKeyboardMode[] {
+  return resolveExtensionKeyboardModes({
+    keyboardModes: [...bundled.keyboardModes, ...(userRegistry?.keyboardModes ?? [])],
+  }).modes;
 }
 
 /**

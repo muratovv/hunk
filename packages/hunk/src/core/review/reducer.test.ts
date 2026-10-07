@@ -651,3 +651,51 @@ describe("filter and note visibility", () => {
     ).toBe(true);
   });
 });
+
+describe("user note resolutions", () => {
+  /** A review holding two saved user notes, the second one active. */
+  function createTwoUserNoteState() {
+    return reduceAll(
+      createTestReviewState(),
+      ...["user-1", "user-2"].flatMap((id) => [
+        {
+          type: "draft/start" as const,
+          draft: { id, fileKey: "alpha", hunkIndex: 0, side: "new" as const, line: 1, body: "x" },
+        },
+        {
+          type: "draft/save" as const,
+          note: createTestStoredNote({ id, fileKey: "alpha", source: "user" }),
+        },
+      ]),
+    );
+  }
+
+  test("orphans and restores named user notes and drops focus from a hidden one", () => {
+    const state = createTwoUserNoteState();
+    expect(state.activeNoteId).toBe("user-2");
+
+    const hidden = reduceReviewState(state, {
+      type: "notes/set-user-resolutions",
+      resolutions: new Map([["user-2", "orphaned"]]),
+    });
+    expect(hidden.userNotes.map((entry) => entry.resolution)).toEqual(["active", "orphaned"]);
+    expect(hidden.userNotes[1]?.note).toBe(state.userNotes[1]?.note);
+    expect(hidden.activeNoteId).toBeNull();
+
+    const restored = reduceReviewState(hidden, {
+      type: "notes/set-user-resolutions",
+      resolutions: new Map([["user-2", "active"]]),
+    });
+    expect(restored.userNotes.map((entry) => entry.resolution)).toEqual(["active", "active"]);
+  });
+
+  test("returns the same state when nothing changes", () => {
+    const state = createTwoUserNoteState();
+    expect(
+      reduceReviewState(state, {
+        type: "notes/set-user-resolutions",
+        resolutions: new Map([["user-1", "active"]]),
+      }),
+    ).toBe(state);
+  });
+});

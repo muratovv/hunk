@@ -880,6 +880,27 @@ export type ExtensionVcsHistoryRangeReviewAction = Extract<
   { kind: "revision-range" }
 >;
 
+/** Endpoints of one review-timeline lookup. */
+export interface ExtensionVcsTimelineInput {
+  /** Revision the timeline starts at; it becomes the timeline's base. */
+  from: string;
+  /** Revision the timeline ends at, inclusive; omit for the commit the working copy is on. */
+  to?: string;
+  /** Most commits allowed after `from`; a longer line resolves null. */
+  maxCount: number;
+  /** Ignore untracked files when reporting `workingTreeChanged`, as `--exclude-untracked` does. */
+  excludeUntracked?: boolean;
+}
+
+/** One linear commit line a review can be re-scoped along. */
+export interface ExtensionVcsTimeline {
+  base: ExtensionVcsHistoryCommit;
+  /** Descendants of `base` up to and including the end revision, oldest first. */
+  commits: ExtensionVcsHistoryCommit[];
+  /** Set only when `to` was omitted: whether the working copy differs from its commit. */
+  workingTreeChanged?: boolean;
+}
+
 /** Optional read-only history capability implemented independently of review operations. */
 export interface ExtensionVcsHistoryCapability {
   open(
@@ -908,6 +929,17 @@ export interface ExtensionVcsHistoryCapability {
     context: ExtensionVcsLoadContext,
     options?: ExtensionVcsHistoryReviewOptions,
   ): ExtensionVcsHistoryRangeReviewAction | Promise<ExtensionVcsHistoryRangeReviewAction>;
+  /**
+   * List the commits a review of `from` against `to` can be re-scoped across.
+   *
+   * Providers return one linear line (Git follows first parents and folds a merge into one step).
+   * Resolve null when `from` is not an ancestor of `to` or the line exceeds `maxCount`. Older
+   * providers may omit this, and Hunk then offers no range slider.
+   */
+  loadTimeline?(
+    input: ExtensionVcsTimelineInput,
+    context: ExtensionVcsLoadContext,
+  ): Promise<ExtensionVcsTimeline | null>;
 }
 
 /** Stash review request, as extension adapters receive it. */
@@ -1269,6 +1301,13 @@ export interface ExtensionPaneActions extends ExtensionReviewNavigation {
   copyText(text: string): boolean;
   /** Show one toast, attributed to the owning extension. */
   notify(message: string, type?: ExtensionNotifyType): void;
+  /**
+   * Re-scope the review to `from..to` along the pane's `timeline` (`to: null` = working tree).
+   *
+   * Both revisions must be timeline positions with `from` before `to`; anything else resolves
+   * `"unavailable"`. The reload keeps the mounted UI and serializes with every other reload.
+   */
+  rescopeReview(from: string, to: string | null): Promise<ExtensionReviewReloadResult>;
 }
 /** @deprecated Use ExtensionPaneActions. */
 export type ExtensionSidebarActions = ExtensionPaneActions;
@@ -1356,6 +1395,8 @@ export interface ExtensionPaneAvailabilityContext {
 export interface ExtensionPaneProps {
   /** Immutable review-source metadata, or null for ordinary reviews. */
   readonly review: ExtensionReviewDescriptor | null;
+  /** Commit line the review can be re-scoped along, or null when it has none. */
+  readonly timeline: ExtensionReviewTimeline | null;
   readonly files: readonly ExtensionDiffFile[];
   readonly selectedFileId: string | null;
   readonly selectedHunkIndex: number | null;
@@ -1547,6 +1588,22 @@ export interface ExtensionComparisonReviewDescriptor extends ExtensionReviewDesc
   readonly commitCount?: number;
   /** Newest-first commit summaries for compact review-info presentation. */
   readonly commits?: readonly ExtensionComparisonCommitDescriptor[];
+}
+
+/**
+ * The commit line the mounted review can be re-scoped along, and the range it shows now.
+ *
+ * Positions run from `base` through `commits` (oldest first) and, when `workingTree` is true, end at
+ * the working tree. The line belongs to the review's launch input and survives re-scoping.
+ */
+export interface ExtensionReviewTimeline {
+  readonly base: ExtensionComparisonCommitDescriptor;
+  readonly commits: readonly ExtensionComparisonCommitDescriptor[];
+  readonly workingTree: boolean;
+  /** Whether the working tree differs from the last commit; read again on refresh and watch. */
+  readonly workingTreeChanged: boolean;
+  /** Revisions bounding the diff on screen; `to: null` is the working tree. */
+  readonly current: { readonly from: string; readonly to: string | null };
 }
 
 /** Bounded provider-neutral metadata describing a delegated or history-selected review. */

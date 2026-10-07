@@ -20,12 +20,16 @@ import {
   FileGroupHeader,
   FileListItem,
 } from "../../../../ui/components/panes/FileListItem";
+import { RANGE_SLIDER_HEIGHT, RangeSlider } from "./rangeSlider/RangeSlider";
+
+/** Keep at least this many file rows before docking the range slider under them. */
+const MIN_FILE_ROWS_WITH_RANGE_SLIDER = 6;
 
 export type BuiltInSidebarProps = Omit<
   ExtensionPaneProps,
-  "placement" | "height" | "currentLine" | "review"
+  "placement" | "height" | "currentLine" | "review" | "timeline"
 > &
-  Partial<Pick<ExtensionPaneProps, "placement" | "height" | "currentLine" | "review">>;
+  Partial<Pick<ExtensionPaneProps, "placement" | "height" | "currentLine" | "review" | "timeline">>;
 
 type FileSidebarVariantProps = Pick<
   BuiltInSidebarProps,
@@ -175,6 +179,8 @@ export function FlexFileSidebar({
   selectedFileId,
   theme,
   width,
+  height,
+  timeline,
   actions,
 }: BuiltInSidebarProps): ReactNode {
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -188,6 +194,9 @@ export function FlexFileSidebar({
   // Mirrors the host layout: one column of row highlight plus row padding.
   const textWidth = Math.max(8, width - 2);
   const mode = resolveFileSidebarMode(textWidth);
+  const showRangeSlider =
+    timeline != null &&
+    (height ?? terminal.height) >= RANGE_SLIDER_HEIGHT + MIN_FILE_ROWS_WITH_RANGE_SLIDER;
   const variantProps: FileSidebarVariantProps = {
     actions,
     estimatedViewportRows: terminal.height,
@@ -288,29 +297,49 @@ export function FlexFileSidebar({
   }, [collapsedDirectoryPaths, files, mode, selectedFileId]);
 
   return (
-    <scrollbox
-      ref={scrollRef}
-      width="100%"
-      height="100%"
-      focused={false}
-      scrollY={true}
-      viewportCulling={true}
-      rootOptions={{ backgroundColor: theme.panel }}
-      wrapperOptions={{ backgroundColor: theme.panel }}
-      viewportOptions={{ backgroundColor: theme.panel }}
-      contentOptions={{ backgroundColor: theme.panel }}
-      verticalScrollbarOptions={{ visible: false }}
-      horizontalScrollbarOptions={{ visible: false }}
+    <box
+      style={{
+        width: "100%",
+        height: "100%",
+        flexDirection: "column",
+        backgroundColor: theme.panel,
+      }}
     >
-      {mode === "tree" ? (
-        <TreeFileSidebar
-          {...variantProps}
-          collapsedDirectoryPaths={collapsedDirectoryPaths}
-          onToggleDirectory={toggleDirectory}
+      <box style={{ width: "100%", flexGrow: 1, flexShrink: 1, backgroundColor: theme.panel }}>
+        <scrollbox
+          ref={scrollRef}
+          width="100%"
+          height="100%"
+          focused={false}
+          scrollY={true}
+          viewportCulling={true}
+          rootOptions={{ backgroundColor: theme.panel }}
+          wrapperOptions={{ backgroundColor: theme.panel }}
+          viewportOptions={{ backgroundColor: theme.panel }}
+          contentOptions={{ backgroundColor: theme.panel }}
+          verticalScrollbarOptions={{ visible: false }}
+          horizontalScrollbarOptions={{ visible: false }}
+        >
+          {mode === "tree" ? (
+            <TreeFileSidebar
+              {...variantProps}
+              collapsedDirectoryPaths={collapsedDirectoryPaths}
+              onToggleDirectory={toggleDirectory}
+            />
+          ) : (
+            <FlatFileSidebar {...variantProps} />
+          )}
+        </scrollbox>
+      </box>
+      {showRangeSlider && timeline && (
+        <RangeSlider
+          timeline={timeline}
+          rescopeReview={actions.rescopeReview}
+          notify={actions.notify}
+          theme={theme}
+          width={width}
         />
-      ) : (
-        <FlatFileSidebar {...variantProps} />
       )}
-    </scrollbox>
+    </box>
   );
 }
